@@ -30,7 +30,7 @@ for k, v in enumerate(files):
     files[k] = [v, mtime]
 
 args.command = '' if not args.command else args.command
-watched = subprocess.Popen(args.command, shell=args.no_shell)
+process = subprocess.Popen(args.command, shell=args.no_shell)
 
 # watch & restart loop
 while 1:
@@ -38,8 +38,9 @@ while 1:
     for k, v in enumerate(files):
         (mode, ino, dev, nlink, uid, gid, size, atime, mtime, ctime) = os.stat(v[0])
         if mtime != v[1] and not reloaded:
-            watched.kill()
-            watched = subprocess.Popen(args.command, shell=args.no_shell)
+            process.send_signal(1)
+            process.wait()
+            process = subprocess.Popen(args.command, shell=args.no_shell)
             reloaded = True
         files[k][1] = mtime
     time.sleep(1)
