@@ -22,7 +22,7 @@ if args.files_list != None:
 elif args.files:
     files = args.files
 else:
-    files = []
+    files = os.listdir()
 
 # get initial modification time for files
 for k, v in enumerate(files):
