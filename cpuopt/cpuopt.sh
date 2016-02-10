@@ -55,7 +55,7 @@ case $1 in
     IFS=";"
     exec 0</etc/cpuoptrc
     while read -a line; do
-        if [ ${line[0]} == $2 ]; then
+        if [ ${line[0]} != '#' ] && [ ${line[0]} == $2 ]; then
             echo ${line[1]} | tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor > /dev/null 
             echo ${line[2]} > /sys/devices/system/cpu/intel_pstate/max_perf_pct
             echo ${line[3]} > /sys/devices/system/cpu/intel_pstate/min_perf_pct

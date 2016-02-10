@@ -1,0 +1,7 @@
+# name ; CPU profile ; upper boundary ; lower boundary ; Interl Turbo Boost
+low;powersave;75;25;no
+normal;powersave;100;25;no
+medium;powersave;100;50;yes
+high;performance;90;25;no
+pro;performance;100;100;no
+highest;performance;100;50;yes
