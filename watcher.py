@@ -4,6 +4,13 @@ import argparse
 import os
 import subprocess
 import time
+import signal
+import sys
+
+# Avoid zombie process
+signal.signal(signal.SIGCHLD, signal.SIG_IGN)
+# Exit after receiving Control-C
+signal.signal(signal.SIGINT, sys.exit)
 
 parser = argparse.ArgumentParser(prog='watcher.py',
         description='Simple filesystem watcher')
