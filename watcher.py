@@ -44,8 +44,10 @@ while 1:
     for k, v in enumerate(files):
         (mode, ino, dev, nlink, uid, gid, size, atime, mtime, ctime) = os.stat(v[0])
         if mtime != v[1] and not reloaded:
-            process.send_signal(1)
-            process.wait()
+            try:
+                process.wait(1)
+            except:
+                process.send_signal(1)
             process = subprocess.Popen(args.command, shell=args.no_shell)
             reloaded = True
         files[k][1] = mtime
