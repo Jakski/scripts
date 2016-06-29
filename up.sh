@@ -12,6 +12,9 @@ do
     '-s')
         OPEN_SHELL=yes
         ;;
+    '-r')
+        OPEN_ROOT_SHELL=yes
+        ;;
     '-u')
         SET_USER=yes
         ;;
@@ -35,6 +38,10 @@ fi
 
 if [[ $INSTALL_GIT == yes ]]; then
     docker exec $CONTAINER apt-get install -y git
+fi
+
+if [[ $OPEN_ROOT_SHELL == yes ]]; then
+    docker exec -itu root $CONTAINER /bin/bash
 fi
 
 if [[ $OPEN_SHELL == yes ]]; then
