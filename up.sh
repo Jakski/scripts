@@ -18,9 +18,6 @@ do
     '-u')
         SET_USER=yes
         ;;
-    '-g')
-        INSTALL_GIT=yes
-        ;;
     *)
         CONTAINER=$1
         ;;
@@ -34,10 +31,6 @@ if [[ $SET_USER == yes ]]; then
         --home-dir /home/$USER \
         --shell /bin/bash \
         -m $USER
-fi
-
-if [[ $INSTALL_GIT == yes ]]; then
-    docker exec $CONTAINER apt-get install -y git
 fi
 
 if [[ $OPEN_ROOT_SHELL == yes ]]; then
