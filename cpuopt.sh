@@ -73,7 +73,7 @@ display_state() {
 	echo "Maximum performance: $(cat $MAX_PERF_PATH)%"
 	echo "Minimum performance: $(cat $MIN_PERF_PATH)%"
 	local procnum=$(($(nproc) - 1))
-	for cpu in $(seq ${procnum}); do
+	for cpu in $(seq 0 ${procnum}); do
 		freq=$(cat ${POLICY_PATH}/policy${cpu}/scaling_cur_freq)
 		freq=$(echo "scale=2;${freq}/1000000" | bc)
 		echo "CPU ${cpu} frequency: ${freq} GHz"
