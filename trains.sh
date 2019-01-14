@@ -99,10 +99,10 @@ get_connections() {
 		--data-urlencode "REQ0JourneyProduct_prod_section_1_3=1" \
 		--data-urlencode "REQ0JourneyProduct_prod_section_2_3=1" \
 		--data-urlencode "REQ0JourneyProduct_prod_section_3_3=1" \
-		--data-urlencode "REQ0JourneyProduct_opt_section_0_list=1%3A100000" \
+		--data-urlencode "REQ0JourneyProduct_opt_section_0_list=1:100000" \
 		--data-urlencode "existOptimizePrice=1" \
 		--data-urlencode "existHafasAttrExc=yes" \
-		--data-urlencode "REQ0HafasChangeTime=0%3A1" \
+		--data-urlencode "REQ0HafasChangeTime=0:1" \
 		--data-urlencode "existSkipLongChanges=0" \
 		--data-urlencode "REQ0HafasAttrExc=" \
 		--data-urlencode "REQ0HafasAttrExc=" \
@@ -118,7 +118,7 @@ get_connections() {
 		--data-urlencode "REQ0HafasAttrExc=" \
 		--data-urlencode "existHafasAttrInc=yes" \
 		--data-urlencode "existHafasAttrExc=yes" \
-		--data-urlencode "wDayExt0=Pn%7CWt%7C%C5%9Ar%7CCz%7CPt%7CSo%7CNd" \
+		--data-urlencode "wDayExt0=Pn|Wt|Śr|Cz|Pt|So|Nd" \
 		--data-urlencode "start=start" \
 		--data-urlencode "existUnsharpSearch=yes" \
 		--data-urlencode "came_from_form=1"
