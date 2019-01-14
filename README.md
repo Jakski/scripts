@@ -6,3 +6,4 @@ Bunch of scripted utilities.
 * screenset.pl - configure display with xrandr tool
 * cpuopt.sh - control processor via intel P-state
 * up.sh - script to setup development environment in containers
+* trains.sh - fetch train departures
