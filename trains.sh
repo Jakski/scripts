@@ -10,7 +10,7 @@ set -o nounset
 SCHEDULE_URL="https://rozklad-pkp.pl"
 USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3538.77 Safari/537.36"
 COOKIE_FILE=$(mktemp /tmp/trains.XXXX)
-DEPENDENCIES="jq xargs curl"
+DEPENDENCIES="jq xargs curl tidy"
 
 print_help() {
 cat << EOF
