@@ -164,10 +164,10 @@ main() {
 	}
 	# Get session
 	do_curl "$SCHEDULE_URL" >/dev/null
-	start="$(get_station_id "${start}")"
-	end="$(get_station_id "${end}")"
+	start_id="$(get_station_id "${start}")"
+	end_id="$(get_station_id "${end}")"
 	local response=""
-	response="$(get_connections "$start" "$end" "$date" | tidy --wrap 0 2>/dev/null)" || {
+	response="$(get_connections "$start_id" "$end_id" "$date" | tidy --wrap 0 2>/dev/null)" || {
 		local ret=$?
 		if [ $ret -ne 0 ] && [ $ret -ne 1 ]; then
 			echo "Failed to prettify response" >&2
@@ -176,8 +176,8 @@ main() {
 	}
 	echo "$response" | sed -nE \
 		-e 's/<td>([0-9]{2}\.[0-9]{2}\.[0-9]{2})<br><\/td>/\1/p' \
-		-e 's/.*<span class=".*">Poznań Główny<\/span><span class=".*">Puszczykowo<\/span><span class=".*"><small>.*czas przejazdu:(.*)<\/small><\/span><\/td>/\1/p' \
-		-e 's/.*Szczegóły połączenia - Poznań Główny - Puszczykowo ODJAZD (.*)<\/span><\/span><\/td>/\1/p' \
+		-e "s/.*<span class=\".*\">${start}<\/span><span class=\".*\">${end}<\/span><span class=\".*\"><small>.*czas przejazdu:(.*)<\/small><\/span><\/td>/\1/p" \
+		-e "s/.*Szczegóły połączenia - ${start} - ${end} ODJAZD (.*)<\/span><\/span><\/td>/\1/p" \
 		| xargs -n3 echo \
 	| while read connection; do
 		local departure="" span="" day=""
