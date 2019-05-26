@@ -12,6 +12,7 @@ set -o pipefail
 set -o nounset
 
 PROGRAM_NAME=vault
+MAPPER_DIR=/dev/mapper
 
 catch_exception() {
 	local exit_code=$?
@@ -159,7 +160,7 @@ mount_subcommand() {
 		losetup -d "$loop_dev"
 		exit 1
 	}
-	mount $mount_params "/dev/mapper/${container_name}" "$destination"
+	mount $mount_params "${MAPPER_DIR}/${container_name}" "$destination"
 }
 
 grow_subcommand(){
@@ -208,7 +209,7 @@ grow_subcommand(){
 	}
 	dd if=/dev/zero bs=1M status=none count="$size" >> "$destination"
 	echo "$password" | cryptsetup resize -qd - "$container_name"
-	$resize_cmd "/dev/mapper/${container_name}"
+	$resize_cmd "${MAPPER_DIR}/${container_name}"
 	cryptsetup close -q "$container_name"
 	losetup -d "$loop_dev"
 }
@@ -266,7 +267,7 @@ create_subcommand() {
 	echo "$password" | cryptsetup luksFormat -qd - "$loop_dev"
 	container_name="${PROGRAM_NAME}-$(echo "$destination" | get_md5sum)"
 	echo "$password" | cryptsetup open -qd - --type luks "$loop_dev" "${container_name}"
-	$fs_cmd "/dev/mapper/${container_name}"
+	$fs_cmd "${MAPPER_DIR}/${container_name}"
 	cryptsetup close -q "$container_name"
 	losetup -d "$loop_dev"
 }
