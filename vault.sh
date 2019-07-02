@@ -40,7 +40,7 @@ Description:
 	Create LUKS encrypted container with filesystem
 Options:
 	-d DEST		container destination path
-	-s SIZE		container size in MiB(defaults to 256 MiB)
+	-s SIZE		container size(defaults to 256M)
 	-f CMD		command to create filesystem(defaults to mkfs.ext4)
 EOF
 }
@@ -217,7 +217,7 @@ grow_subcommand(){
 create_subcommand() {
 	local \
 		OPTIND \
-		size=256 \
+		size="256M" \
 		destination="" \
 		fs_cmd="mkfs.ext4 -q"
 	while getopts ":hs:d:f:" opt; do
@@ -262,7 +262,7 @@ create_subcommand() {
 		echo "Passwords doesn't match" >&2
 		exit 1
 	fi
-	dd if=/dev/zero of="$destination" bs=1M status=none count="$size"
+	truncate -s "${size}" "$destination"
 	loop_dev=$(losetup --show -f "$destination")
 	echo "$password" | cryptsetup luksFormat -qd - "$loop_dev"
 	container_name="${PROGRAM_NAME}-$(echo "$destination" | get_md5sum)"
