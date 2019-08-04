@@ -156,7 +156,7 @@ mount_subcommand() {
 	echo
 	loop_dev=$(losetup --show -f "$container_path")
 	container_name="${PROGRAM_NAME}-$(echo "$container_path" | get_md5sum)"
-	echo "$password" | cryptsetup open -qd - --type luks "$loop_dev" "${container_name}" || {
+	echo -n "$password" | cryptsetup open -qd - --type luks "$loop_dev" "${container_name}" || {
 		losetup -d "$loop_dev"
 		exit 1
 	}
@@ -203,12 +203,12 @@ grow_subcommand(){
 	echo
 	loop_dev=$(losetup --show -f "$destination")
 	container_name="${PROGRAM_NAME}-$(echo "$destination" | get_md5sum)"
-	echo "$password" | cryptsetup open -qd - --type luks "$loop_dev" "${container_name}" || {
+	echo -n "$password" | cryptsetup open -qd - --type luks "$loop_dev" "${container_name}" || {
 		losetup -d "$loop_dev"
 		exit 1
 	}
 	dd if=/dev/zero bs=1M status=none count="$size" >> "$destination"
-	echo "$password" | cryptsetup resize -qd - "$container_name"
+	echo -n "$password" | cryptsetup resize -qd - "$container_name"
 	$resize_cmd "${MAPPER_DIR}/${container_name}"
 	cryptsetup close -q "$container_name"
 	losetup -d "$loop_dev"
@@ -264,9 +264,9 @@ create_subcommand() {
 	fi
 	truncate -s "${size}" "$destination"
 	loop_dev=$(losetup --show -f "$destination")
-	echo "$password" | cryptsetup luksFormat -qd - "$loop_dev"
+	echo -n "$password" | cryptsetup luksFormat -qd - "$loop_dev"
 	container_name="${PROGRAM_NAME}-$(echo "$destination" | get_md5sum)"
-	echo "$password" | cryptsetup open -qd - --type luks "$loop_dev" "${container_name}"
+	echo -n "$password" | cryptsetup open -qd - --type luks "$loop_dev" "${container_name}"
 	$fs_cmd "${MAPPER_DIR}/${container_name}"
 	cryptsetup close -q "$container_name"
 	losetup -d "$loop_dev"
