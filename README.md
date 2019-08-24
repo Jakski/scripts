@@ -10,3 +10,4 @@ Bunch of scripted utilities.
 * up.sh - script to setup development environment in containers
 * trains.sh - fetch train departures
 * vault.sh - manage LUKS based vaults
+* log-analysis - collection of scripts for log analysis
