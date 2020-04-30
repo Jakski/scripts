@@ -3,6 +3,26 @@
 # Provision fresh system image for local virtual machine
 ################################################################################
 
+PACKAGES="\
+haveged
+neovim
+dnsutils
+strace
+tcpdump
+libcap2-bin
+sudo
+curl
+tmux
+wget
+gcc
+bpftrace
+python3
+python3-dev
+python3-neovim
+python
+python-dev
+"
+
 virt-builder \
   debian-10 \
   -o debian-10.qcow2 \
@@ -11,7 +31,8 @@ virt-builder \
   --arch x86_64 \
   --ssh-inject root:file:"$HOME"/.ssh/local_dev.pub \
   --root-password password:debian-10 \
-  --install haveged,neovim,dnsutils,strace,tcpdump,libcap2-bin,sudo,curl \
+  --install "$(echo "$PACKAGES" | tr "\n" ",")" \
+  --run "$(dirname "$(realpath "$0")")/setup-vm.sh" \
   --hostname debian-10 \
   --timezone Europe/Warsaw \
   --update
