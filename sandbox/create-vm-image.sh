@@ -17,10 +17,20 @@ wget
 gcc
 bpftrace
 python3
+python3-pip
 python3-dev
+python3-venv
 python3-neovim
 python
 python-dev
+python-pip
+git
+subversion
+tree
+silversearcher-ag
+libssl-dev
+libffi-dev
+sqlite3
 "
 
 virt-builder \
