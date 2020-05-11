@@ -5,6 +5,7 @@
 
 PACKAGES="\
 haveged
+rsync
 neovim
 dnsutils
 strace
