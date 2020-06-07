@@ -32,6 +32,7 @@ silversearcher-ag
 libssl-dev
 libffi-dev
 sqlite3
+build-essential
 "
 
 virt-builder \
