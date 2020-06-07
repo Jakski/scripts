@@ -45,6 +45,8 @@ virt-builder \
   --root-password password:debian-10 \
   --install "$(echo "$PACKAGES" | tr "\n" ",")" \
   --run "$(dirname "$(realpath "$0")")/setup-vm.sh" \
+  --run-command "useradd --groups sudo --create-home --shell /bin/bash developer" \
+  --ssh-inject developer:file:"$HOME"/.ssh/local_dev.pub \
   --hostname debian-10 \
   --timezone Europe/Warsaw \
   --update
