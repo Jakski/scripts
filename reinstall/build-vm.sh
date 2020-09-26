@@ -23,6 +23,7 @@ git
 grub-pc
 haveged
 libcap2-bin
+mosh
 libffi-dev
 libssl-dev
 linux-image-amd64
