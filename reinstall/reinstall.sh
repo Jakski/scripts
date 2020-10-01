@@ -65,14 +65,17 @@ main() {
   IMAGE_PASSWORD=$(echo -n "$IMAGE_PASSWORD" | sed 's/[\/&]/\\&/g')
   IMAGE_URL=$(echo -n "$IMAGE_URL" | sed 's/[\/&]/\\&/g')
   TMP_DIR=$(mktemp -d)
-  scp ./initramfs-hook.sh "$TARGET":/etc/initramfs-tools/hooks/reinstall
+  cat ./initramfs-hook.sh \
+    | ssh "$TARGET" "sudo tee /etc/initramfs-tools/hooks/reinstall" \
+    > /dev/null
   sed \
     -e "s/<<image_password>>/${IMAGE_PASSWORD}/" \
     -e "s/<<image_url>>/${IMAGE_URL}/" \
     > "${TMP_DIR}/initramfs-script.sh" \
     < ./initramfs-script.sh
-  scp "${TMP_DIR}/initramfs-script.sh" \
-    "$TARGET":/etc/initramfs-tools/scripts/init-premount/reinstall
+  cat "${TMP_DIR}/initramfs-script.sh" \
+    | ssh "$TARGET" "sudo tee /etc/initramfs-tools/scripts/init-premount/reinstall" \
+    > /dev/null
   ssh "$TARGET" "sudo /bin/bash -" \
 << EOF
 set -euo pipefail

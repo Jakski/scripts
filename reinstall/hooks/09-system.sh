@@ -13,10 +13,20 @@ chown -R developer:developer /home/developer
 echo "developer ALL = (ALL) NOPASSWD: ALL" > /etc/sudoers.d/developer
 chmod 440 /etc/sudoers.d/developer
 
+sed -i -e 's/^XKBLAYOUT=.*/XKBLAYOUT="pl"/' /etc/default/keyboard
+sed -i \
+  -e 's/^# \(en_US.UTF-8 UTF-8\)/\1/' \
+  -e 's/^# \(pl_PL.UTF-8 UTF-8\)/\1/' \
+  /etc/locale.gen
+locale-gen
+update-locale LANG=en_US.UTF-8
+ln -sf /usr/share/zoneinfo/Europe/Warsaw /etc/localtime
+
 truncate -s 0 /etc/machine-id || true
 rm -rf /var/lib/dbus/machine-id || true
-systemctl enable systemd-networkd
-systemctl enable nftables
+systemctl enable systemd-networkd.service
+systemctl enable haveged
+systemctl enable nftables.service
 
 f=/etc/hosts
 mv "${FILES_DIR}/hosts" "$f"

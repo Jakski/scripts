@@ -82,15 +82,6 @@ main() {
     esac
   done
 
-  get_cfg '.skip_cleanup' && {
-    SKIP_CLEANUP="yes"
-  }
-  CONFIG=$(cat "$CONFIG")
-  MOUNTPOINT=$(realpath "$(get_cfg .mountpoint)")
-  OUTPUT_FILE=$(realpath "$(get_cfg .output_file)")
-  local cache_dir
-  cache_dir=$(realpath "$(get_cfg .cache_directory)")
-  mkdir -p "$cache_dir"
   echo ">>> Installing host dependencies..."
   apt-get update
   apt-get install -y \
@@ -100,6 +91,15 @@ main() {
     debootstrap \
     jq \
     kpartx
+  CONFIG=$(cat "$CONFIG")
+  get_cfg '.skip_cleanup' && {
+    SKIP_CLEANUP="yes"
+  }
+  MOUNTPOINT=$(realpath "$(get_cfg .mountpoint)")
+  OUTPUT_FILE=$(realpath "$(get_cfg .output_file)")
+  local cache_dir
+  cache_dir=$(realpath "$(get_cfg .cache_directory)")
+  mkdir -p "$cache_dir"
 
   echo ">>> Preparing disk image..."
   mkdir -p "$MOUNTPOINT"
@@ -152,7 +152,12 @@ main() {
   mkdir -p "${MOUNTPOINT}/tmp/build-vm"
   cp -rL "$(get_cfg .files_directory)"/* "${MOUNTPOINT}/tmp/build-vm"
   local script
-  for script in $(ls -1 "$(get_cfg .hooks_directory)" | sort -n); do
+  for script in $(
+    ls -1 "$(get_cfg .hooks_directory)" \
+    | grep -v '\.disabled$' \
+    | sort -n
+  )
+  do
     (
       script="$(get_cfg .hooks_directory)/${script}"
       export FILES_DIR="/tmp/build-vm"
