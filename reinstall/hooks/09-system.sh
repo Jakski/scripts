@@ -62,3 +62,8 @@ f=/etc/rc.local
 mv "${FILES_DIR}/rc.local" "$f"
 chmod 750 "$f"
 chown root:root "$f"
+
+f=/home/developer/.tmux.conf
+mv "${FILES_DIR}/tmux.conf" "$f"
+chmod 0640 "$f"
+chown developer:developer "$f"
