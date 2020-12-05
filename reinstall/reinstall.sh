@@ -80,6 +80,7 @@ main() {
 << EOF
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
+apt-get update
 apt-get install -y gnupg busybox-static
 chmod +x /etc/initramfs-tools/hooks/reinstall
 chmod +x /etc/initramfs-tools/scripts/init-premount/reinstall
