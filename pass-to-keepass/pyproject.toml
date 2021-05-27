@@ -1,0 +1,18 @@
+[tool.poetry]
+name = "pass-to-keepass"
+version = "0.1.0"
+description = "pass repository to KDBX file converter"
+authors = ["Jakub Pieńkowski <8525083+Jakski@users.noreply.github.com>"]
+
+[tool.poetry.scripts]
+pass-to-keepass = 'pass_to_keepass:main'
+
+[tool.poetry.dependencies]
+python = "^3.9"
+pykeepass = "^4.0.1"
+
+[tool.poetry.dev-dependencies]
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
