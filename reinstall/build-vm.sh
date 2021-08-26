@@ -126,7 +126,7 @@ main() {
     debootstrap \
       --make-tarball="$debootstrap_archive" \
       --include="$extra_pkgs" \
-      buster \
+      "$(get_cfg '.release')" \
       "$MOUNTPOINT" \
     || {
       rm -rf "$tmp_dir"
@@ -135,7 +135,7 @@ main() {
   debootstrap \
     --unpack-tarball="$debootstrap_archive" \
     --include="$extra_pkgs" \
-    buster \
+      "$(get_cfg '.release')" \
     "$MOUNTPOINT"
   mount -t devtmpfs dev "${MOUNTPOINT}/dev"
   mount -t proc proc "${MOUNTPOINT}/proc"

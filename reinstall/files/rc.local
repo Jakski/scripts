@@ -5,3 +5,4 @@ set -euo pipefail
 disk=$(ls /sys/class/block | sort -n | head -n 1)
 growpart "/dev/${disk}" 2
 resize2fs "$(findmnt / -o SOURCE -n)"
+rm /etc/rc.local

@@ -1,11 +1,10 @@
 {
   "packages": [
     "subversion",
+    "podman",
     "strace",
     "bpftrace",
     "default-jdk",
-    "redis",
-    "tinc",
     "neovim",
     "gcc",
     "build-essential",
@@ -16,7 +15,7 @@
     "python3-pip",
     "python3-venv",
     "python-dev",
-    "python-pip",
+    "python-pip-whl",
     "apt-transport-https",
     "ca-certificates",
     "cloud-guest-utils",
@@ -50,12 +49,13 @@
     "console-setup",
     "locales"
   ],
-  "disk_size": "10G",
+  "disk_size": "5G",
   "skip_cleanup": false,
   "cache_directory": "cache",
   "mountpoint": "../mnt",
   "output_file": "../debian.img",
   "root_password": "qwerty",
   "files_directory": "files",
-  "hooks_directory": "hooks"
+  "hooks_directory": "hooks",
+  "release": "bullseye"
 }

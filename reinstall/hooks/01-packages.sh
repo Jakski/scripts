@@ -9,4 +9,3 @@ apt-get update
 apt-get install -y apt-fast
 mv "${FILES_DIR}/apt-fast.conf" /etc/apt-fast.conf
 apt-fast install -y $(echo -n "$(get_cfg '.packages[]')" | tr '\n' ' ')
-systemctl disable redis-server.service || true
