@@ -11,3 +11,6 @@ Bunch of scripted utilities.
 * trains.sh - fetch train departures
 * vault.sh - manage LUKS based vaults
 * log-analysis - collection of scripts for log analysis
+* sandbox - build virtual machine image for development
+* reinstall - reinstall virtual machine residing in cloud
+* pomodoro.sh - Notify about Pomodoro sessions
