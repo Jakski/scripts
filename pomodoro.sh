@@ -57,12 +57,12 @@ main_parse_args() {
 		-h|--help)
 			shift
 			main_help
-			return 0
+			exit 0
 		;;
 		*)
 			shift
 			main_help
-			return 1
+			exit 1
 		;;
 		esac
 	done
