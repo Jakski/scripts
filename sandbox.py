@@ -8,6 +8,8 @@ from functools import partial
 from ctypes import CDLL, get_errno, c_int
 from ctypes.util import find_library
 
+import dbus
+
 
 class Namespace(IntFlag):
     '''Taken from <sched.h>.'''
@@ -52,8 +54,10 @@ class Library(CDLL):
         def check_errno(func, *args, **kwargs):
             r = func(*args, **kwargs)
             if e := get_errno():
+                fn = func.__name__
+                code = errno.errorcode[e]
                 raise LibraryError(
-                    f'Function failed with: {errno.errorcode[e]}',
+                    f'Function {fn} failed with: {code}',
                     errno=e,
                 )
             return r
@@ -89,6 +93,7 @@ def main():
         help='command to run in sandboxed environment',
     )
     args = parser.parse_args()
+    args.dir = os.path.realpath(args.dir)
     uid = os.getuid()
     gid = os.getgid()
     home = os.path.expanduser('~')
