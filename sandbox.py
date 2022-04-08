@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 
-import time
 import errno
 import os
+from argparse import ArgumentParser
 from enum import IntFlag
 from functools import partial
 from ctypes import CDLL, get_errno, c_int
@@ -34,7 +34,10 @@ class Mount(IntFlag):
 
 
 class LibraryError(Exception):
-    pass
+
+    def __init__(self, msg, errno=None):
+        super().__init__(msg)
+        self.errno = errno
 
 
 class Library(CDLL):
@@ -50,7 +53,8 @@ class Library(CDLL):
             r = func(*args, **kwargs)
             if e := get_errno():
                 raise LibraryError(
-                    f'Function failed with: {errno.errorcode[e]}'
+                    f'Function failed with: {errno.errorcode[e]}',
+                    errno=e,
                 )
             return r
         return partial(check_errno, super().__getattr__(name))
@@ -68,33 +72,45 @@ def map_ids(uids, gids):
 
 
 def main():
+    parser = ArgumentParser(description='configure sandbox')
+    parser.add_argument(
+        '--profile', '-p', type=str,
+        action='store', dest='profile', default='sandbox',
+        help='AppArmor profile name',
+    )
+    parser.add_argument(
+        '--dir', '-d', type=str,
+        action='store', dest='dir', required=True,
+        help='path to alternative home directory',
+    )
+    parser.add_argument(
+        dest='args',
+        nargs='*', default=['/bin/bash'],
+        help='command to run in sandboxed environment',
+    )
+    args = parser.parse_args()
     uid = os.getuid()
     gid = os.getgid()
-    apparmor = Library('apparmor')
+    home = os.path.expanduser('~')
+    if args.profile:
+        apparmor = Library('apparmor')
     libc = Library('c')
-    libc.unshare(
-        Namespace.USER |
-        Namespace.MOUNT |
-        Namespace.IPC
-    )
+    libc.unshare(Namespace.USER | Namespace.MOUNT)
     map_ids(
-        ((0, 1000),),
-        ((0, 1000),),
+        ((0, uid),),
+        ((0, gid),),
     )
-    libc.mount(
-        b'/home',
-        b'/home',
-        None,
-        Mount.BIND,
-        None,
-    )
-    libc.unshare(Namespace.USER)
+    os.chdir('/')
+    libc.mount(args.dir.encode(), home.encode(), None, Mount.BIND, None)
+    os.chdir(home)
+    libc.unshare(Namespace.USER | Namespace.IPC)
     map_ids(
-        ((1000, 0),),
-        ((1000, 0),),
+        ((uid, 0),),
+        ((gid, 0),),
     )
-    apparmor.aa_change_onexec(b'test')
-    os.execv('/bin/bash', ('bash',))
+    if args.profile:
+        apparmor.aa_change_onexec(args.profile.encode())
+    os.execv(args.args[0], args.args)
 
 
 if __name__ == '__main__':
