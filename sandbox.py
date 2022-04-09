@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 
 import errno
+import time
+import socket
 import os
+import dbus
+from distutils.spawn import find_executable
 from argparse import ArgumentParser
 from enum import IntFlag
 from functools import partial
@@ -74,6 +78,46 @@ def map_ids(uids, gids):
         for internal, external in gids:
             f.write(f'{internal} {external} 1\n')
 
+def get_runtime_dir():
+    if not (runtime_dir := os.environ.get('XDG_RUNTIME_DIR')):
+        uid = os.getuid()
+        runtime_dir = f'/run/user/{uid}'
+    return runtime_dir
+
+def ensure_dbus_proxy(name, src, dest):
+    runtime_dir = get_runtime_dir()
+    if not (program := find_executable('xdg-dbus-proxy')):
+        raise RuntimeError('Could not find xdg-dbus-proxy executable in PATH')
+    manager = dbus.Interface(
+        dbus.SessionBus().get_object(
+            'org.freedesktop.systemd1',
+            '/org/freedesktop/systemd1',
+        ),
+        dbus_interface='org.freedesktop.systemd1.Manager',
+    )
+    try:
+        if unit := manager.GetUnit(name):
+            # TODO: What, if service is stopped?
+            return
+    except dbus.exceptions.DBusException:
+        pass
+    manager.StartTransientUnit(
+        name, 'replace',
+        [
+            ('Description', 'DBus filtering proxy for sandbox'),
+            ('Type', 'simple'),
+            ('ExecStart', [(program, [
+                program,
+                f'unix:path={runtime_dir}/{src}',
+                f'{runtime_dir}/{dest}',
+                '--filter',
+            ], True)]),
+        ],
+        [],
+    )
+    # TODO: xdg-dbus-proxy supports signaling readiness over file descriptor.
+    time.sleep(1)
+
 
 def main():
     parser = ArgumentParser(description='configure sandbox')
@@ -94,9 +138,17 @@ def main():
     )
     args = parser.parse_args()
     args.dir = os.path.realpath(args.dir)
+    # TODO: Can it be done simpler?
+    ensure_dbus_proxy('dbus-sandbox-bus.service', 'bus', 'bus-sandbox')
+    ensure_dbus_proxy(
+        'dbus-sandbox-systemd.service',
+        'systemd/private',
+        'systemd/private-sandbox'
+    )
     uid = os.getuid()
     gid = os.getgid()
     home = os.path.expanduser('~')
+    runtime_dir = get_runtime_dir()
     if args.profile:
         apparmor = Library('apparmor')
     libc = Library('c')
@@ -107,6 +159,16 @@ def main():
     )
     os.chdir('/')
     libc.mount(args.dir.encode(), home.encode(), None, Mount.BIND, None)
+    libc.mount(
+        f'{runtime_dir}/bus-sandbox'.encode(),
+        f'{runtime_dir}/bus'.encode(),
+        None, Mount.BIND, None,
+    )
+    libc.mount(
+        f'{runtime_dir}/systemd/private-sandbox'.encode(),
+        f'{runtime_dir}/systemd/private'.encode(),
+        None, Mount.BIND, None,
+    )
     os.chdir(home)
     libc.unshare(Namespace.USER | Namespace.IPC)
     map_ids(
