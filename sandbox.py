@@ -57,15 +57,15 @@ class Library(CDLL):
     def __getattr__(self, name):
         def check_errno(func, *args, **kwargs):
             r = func(*args, **kwargs)
-            if e := get_errno():
+            if r != 0:
+                e = get_errno()
                 fn = func.__name__
                 code = errno.errorcode[e]
                 raise LibraryError(
                     f'Function {fn} failed with: {code}',
                     errno=e,
                 )
-            return r
-        return partial(check_errno, super().__getattr__(name))
+        return partial(check_errno, self[name])
 
 
 def map_ids(uids, gids):
@@ -97,7 +97,6 @@ def ensure_dbus_proxy(name, src, dest):
     )
     try:
         if unit := manager.GetUnit(name):
-            # TODO: What, if service is stopped?
             return
     except dbus.exceptions.DBusException:
         pass
@@ -115,8 +114,6 @@ def ensure_dbus_proxy(name, src, dest):
         ],
         [],
     )
-    # TODO: xdg-dbus-proxy supports signaling readiness over file descriptor.
-    time.sleep(1)
 
 
 def main():
@@ -138,7 +135,6 @@ def main():
     )
     args = parser.parse_args()
     args.dir = os.path.realpath(args.dir)
-    # TODO: Can it be done simpler?
     ensure_dbus_proxy('dbus-sandbox-bus.service', 'bus', 'bus-sandbox')
     ensure_dbus_proxy(
         'dbus-sandbox-systemd.service',
