@@ -7,8 +7,15 @@ import dbus
 from distutils.spawn import find_executable
 from argparse import ArgumentParser
 from enum import IntFlag
-from functools import partial
-from ctypes import CDLL, get_errno, c_int
+from ctypes import (
+    CFUNCTYPE,
+    CDLL,
+    get_errno,
+    c_int,
+    c_char_p,
+    c_ulong,
+    c_void_p,
+)
 from ctypes.util import find_library
 
 import dbus
@@ -44,26 +51,65 @@ class LibraryError(Exception):
         self.errno = errno
 
 
-class Library(CDLL):
+class Library:
     def __init__(self, name):
         if lib_path := find_library(name):
-            super().__init__(lib_path, use_errno=True)
+            self._cdll = CDLL(lib_path, use_errno=True)
         else:
             raise LibraryError(f"Failed to find {name} library")
 
-    def __getattr__(self, name):
-        def check_errno(func, *args, **kwargs):
-            r = func(*args, **kwargs)
-            if r != 0:
+    @staticmethod
+    def check_errno(name):
+        def check_errno(result, func, args):
+            if result != 0:
                 e = get_errno()
-                fn = func.__name__
                 code = errno.errorcode[e]
                 raise LibraryError(
-                    f"Function {fn} failed with: {code}",
+                    f"Foreign function {name} failed with: {code}",
                     errno=e,
                 )
+            return args
 
-        return partial(check_errno, self[name])
+        return check_errno
+
+
+class AppArmor(Library):
+    def __init__(self):
+        super().__init__("apparmor")
+        self.aa_change_onexec = CFUNCTYPE(c_int, c_char_p, use_errno=True)(
+            ("aa_change_onexec", self._cdll),
+            ((1, "profile"),),
+        )
+        self.aa_change_onexec.errcheck = self.check_errno("aa_change_onexec")
+
+
+class Libc(Library):
+    def __init__(self):
+        super().__init__("c")
+        self.unshare = CFUNCTYPE(c_int, c_int, use_errno=True)(
+            ("unshare", self._cdll),
+            ((1, "flags"),),
+        )
+        self.unshare.errcheck = self.check_errno("unshare")
+        self.mount = CFUNCTYPE(
+            c_int,
+            c_char_p,
+            c_char_p,
+            c_char_p,
+            c_ulong,
+            c_void_p,
+            use_errno=True,
+        )(
+            ("mount", self._cdll),
+            (
+                (1, "source"),
+                (1, "target"),
+                (1, "filesystemtype"),
+                (1, "mountflags"),
+                (1, "data"),
+            ),
+        )
+        self.mount.errcheck = self.check_errno("mount")
 
 
 def map_ids(uids, gids):
@@ -171,35 +217,41 @@ def main():
     home = os.path.expanduser("~")
     runtime_dir = get_runtime_dir()
     if args.profile:
-        apparmor = Library("apparmor")
-    libc = Library("c")
+        apparmor = AppArmor()
+    libc = Libc()
     libc.unshare(Namespace.USER | Namespace.MOUNT)
     map_ids(
         ((0, uid),),
         ((0, gid),),
     )
     os.chdir("/")
-    libc.mount(args.dir.encode(), home.encode(), None, Mount.BIND, None)
     libc.mount(
-        f"{runtime_dir}/bus-sandbox".encode(),
-        f"{runtime_dir}/bus".encode(),
-        None,
-        Mount.BIND,
-        None,
+        source=args.dir.encode(),
+        target=home.encode(),
+        filesystemtype=None,
+        mountflags=Mount.BIND,
+        data=None,
     )
     libc.mount(
-        f"{runtime_dir}/systemd/private-sandbox".encode(),
-        f"{runtime_dir}/systemd/private".encode(),
-        None,
-        Mount.BIND,
-        None,
+        source=f"{runtime_dir}/bus-sandbox".encode(),
+        target=f"{runtime_dir}/bus".encode(),
+        filesystemtype=None,
+        mountflags=Mount.BIND,
+        data=None,
     )
     libc.mount(
-        "tmpfs".encode(),
-        "/tmp".encode(),
-        "tmpfs".encode(),
-        Mount.NOSUID | Mount.NOEXEC | Mount.NODEV,
-        "size=1G".encode(),
+        source=f"{runtime_dir}/systemd/private-sandbox".encode(),
+        target=f"{runtime_dir}/systemd/private".encode(),
+        filesystemtype=None,
+        mountflags=Mount.BIND,
+        data=None,
+    )
+    libc.mount(
+        source="tmpfs".encode(),
+        target="/tmp".encode(),
+        filesystemtype="tmpfs".encode(),
+        mountflags=Mount.NOSUID | Mount.NOEXEC | Mount.NODEV,
+        data="size=1G".encode(),
     )
     os.chdir(home)
     libc.unshare(Namespace.USER | Namespace.IPC)
