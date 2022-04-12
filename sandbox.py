@@ -2,7 +2,6 @@
 
 import errno
 import time
-import socket
 import os
 import dbus
 from distutils.spawn import find_executable
@@ -16,7 +15,7 @@ import dbus
 
 
 class Namespace(IntFlag):
-    '''Taken from <sched.h>.'''
+    """Taken from <sched.h>."""
 
     MOUNT = 0x00020000
     IPC = 0x08000000
@@ -26,7 +25,7 @@ class Namespace(IntFlag):
 
 
 class Mount(IntFlag):
-    '''Taken from <sys/mount.h>'''
+    """Taken from <sys/mount.h>"""
 
     RDONLY = 1
     NOSUID = 2
@@ -40,19 +39,17 @@ class Mount(IntFlag):
 
 
 class LibraryError(Exception):
-
     def __init__(self, msg, errno=None):
         super().__init__(msg)
         self.errno = errno
 
 
 class Library(CDLL):
-
     def __init__(self, name):
         if lib_path := find_library(name):
             super().__init__(lib_path, use_errno=True)
         else:
-            raise LibraryError(f'Failed to find {name} library')
+            raise LibraryError(f"Failed to find {name} library")
 
     def __getattr__(self, name):
         def check_errno(func, *args, **kwargs):
@@ -62,38 +59,41 @@ class Library(CDLL):
                 fn = func.__name__
                 code = errno.errorcode[e]
                 raise LibraryError(
-                    f'Function {fn} failed with: {code}',
+                    f"Function {fn} failed with: {code}",
                     errno=e,
                 )
+
         return partial(check_errno, self[name])
 
 
 def map_ids(uids, gids):
-    with open('/proc/self/uid_map', 'w') as f:
+    with open("/proc/self/uid_map", "w") as f:
         for internal, external in uids:
-            f.write(f'{internal} {external} 1\n')
-    with open('/proc/self/setgroups', 'w') as f:
-        f.write('deny\n')
-    with open('/proc/self/gid_map', 'w') as f:
+            f.write(f"{internal} {external} 1\n")
+    with open("/proc/self/setgroups", "w") as f:
+        f.write("deny\n")
+    with open("/proc/self/gid_map", "w") as f:
         for internal, external in gids:
-            f.write(f'{internal} {external} 1\n')
+            f.write(f"{internal} {external} 1\n")
+
 
 def get_runtime_dir():
-    if not (runtime_dir := os.environ.get('XDG_RUNTIME_DIR')):
+    if not (runtime_dir := os.environ.get("XDG_RUNTIME_DIR")):
         uid = os.getuid()
-        runtime_dir = f'/run/user/{uid}'
+        runtime_dir = f"/run/user/{uid}"
     return runtime_dir
+
 
 def ensure_dbus_proxy(name, src, dest):
     runtime_dir = get_runtime_dir()
-    if not (program := find_executable('xdg-dbus-proxy')):
-        raise RuntimeError('Could not find xdg-dbus-proxy executable in PATH')
+    if not (program := find_executable("xdg-dbus-proxy")):
+        raise RuntimeError("Could not find xdg-dbus-proxy executable in PATH")
     manager = dbus.Interface(
         dbus.SessionBus().get_object(
-            'org.freedesktop.systemd1',
-            '/org/freedesktop/systemd1',
+            "org.freedesktop.systemd1",
+            "/org/freedesktop/systemd1",
         ),
-        dbus_interface='org.freedesktop.systemd1.Manager',
+        dbus_interface="org.freedesktop.systemd1.Manager",
     )
     try:
         if unit := manager.GetUnit(name):
@@ -101,69 +101,98 @@ def ensure_dbus_proxy(name, src, dest):
     except dbus.exceptions.DBusException:
         pass
     manager.StartTransientUnit(
-        name, 'replace',
+        name,
+        "replace",
         [
-            ('Description', 'DBus filtering proxy for sandbox'),
-            ('Type', 'simple'),
-            ('ExecStart', [(program, [
-                program,
-                f'unix:path={runtime_dir}/{src}',
-                f'{runtime_dir}/{dest}',
-                '--filter',
-            ], True)]),
+            ("Description", "DBus filtering proxy for sandbox"),
+            ("Type", "simple"),
+            (
+                "ExecStart",
+                [
+                    (
+                        program,
+                        [
+                            program,
+                            f"unix:path={runtime_dir}/{src}",
+                            f"{runtime_dir}/{dest}",
+                            "--filter",
+                        ],
+                        True,
+                    )
+                ],
+            ),
         ],
         [],
     )
+    for i in range(5):
+        if os.path.exists(f"{runtime_dir}/{dest}"):
+            break
+        time.sleep(0.5)
+    else:
+        raise RuntimeError(
+            f"DBus proxy {name} failed to create socket in {runtime_dir}/{dest}"
+        )
 
 
 def main():
-    parser = ArgumentParser(description='configure sandbox')
+    parser = ArgumentParser(description="configure sandbox")
     parser.add_argument(
-        '--profile', '-p', type=str,
-        action='store', dest='profile', default='sandbox',
-        help='AppArmor profile name',
+        "--profile",
+        "-p",
+        type=str,
+        action="store",
+        dest="profile",
+        default="sandbox",
+        help="AppArmor profile name",
     )
     parser.add_argument(
-        '--dir', '-d', type=str,
-        action='store', dest='dir', required=True,
-        help='path to alternative home directory',
+        "--dir",
+        "-d",
+        type=str,
+        action="store",
+        dest="dir",
+        required=True,
+        help="path to alternative home directory",
     )
     parser.add_argument(
-        dest='args',
-        nargs='*', default=['/bin/bash'],
-        help='command to run in sandboxed environment',
+        dest="args",
+        nargs="*",
+        default=["/bin/bash"],
+        help="command to run in sandboxed environment",
     )
     args = parser.parse_args()
     args.dir = os.path.realpath(args.dir)
-    ensure_dbus_proxy('dbus-sandbox-bus.service', 'bus', 'bus-sandbox')
+    ensure_dbus_proxy("dbus-sandbox-bus.service", "bus", "bus-sandbox")
     ensure_dbus_proxy(
-        'dbus-sandbox-systemd.service',
-        'systemd/private',
-        'systemd/private-sandbox'
+        "dbus-sandbox-systemd.service", "systemd/private", "systemd/private-sandbox"
     )
     uid = os.getuid()
     gid = os.getgid()
-    home = os.path.expanduser('~')
+    home = os.path.expanduser("~")
     runtime_dir = get_runtime_dir()
     if args.profile:
-        apparmor = Library('apparmor')
-    libc = Library('c')
+        apparmor = Library("apparmor")
+    libc = Library("c")
     libc.unshare(Namespace.USER | Namespace.MOUNT)
     map_ids(
         ((0, uid),),
         ((0, gid),),
     )
-    os.chdir('/')
+    os.chdir("/")
     libc.mount(args.dir.encode(), home.encode(), None, Mount.BIND, None)
     libc.mount(
-        f'{runtime_dir}/bus-sandbox'.encode(),
-        f'{runtime_dir}/bus'.encode(),
-        None, Mount.BIND, None,
+        f"{runtime_dir}/bus-sandbox".encode(),
+        f"{runtime_dir}/bus".encode(),
+        None,
+        Mount.BIND,
+        None,
     )
     libc.mount(
-        f'{runtime_dir}/systemd/private-sandbox'.encode(),
-        f'{runtime_dir}/systemd/private'.encode(),
-        None, Mount.BIND, None,
+        f"{runtime_dir}/systemd/private-sandbox".encode(),
+        f"{runtime_dir}/systemd/private".encode(),
+        None,
+        Mount.BIND,
+        None,
     )
     os.chdir(home)
     libc.unshare(Namespace.USER | Namespace.IPC)
@@ -172,9 +201,14 @@ def main():
         ((gid, 0),),
     )
     if args.profile:
-        apparmor.aa_change_onexec(args.profile.encode())
+        try:
+            apparmor.aa_change_onexec(args.profile.encode())
+        except LibraryError as e:
+            if e.errno == errno.ENOENT:
+                raise RuntimeError(f"Failed to apply AppArmor profile: {args.profile}")
+            raise e
     os.execv(args.args[0], args.args)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
