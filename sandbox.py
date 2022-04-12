@@ -199,7 +199,7 @@ def main():
         "/tmp".encode(),
         "tmpfs".encode(),
         Mount.NOSUID | Mount.NOEXEC | Mount.NODEV,
-        "size=256M".encode(),
+        "size=1G".encode(),
     )
     os.chdir(home)
     libc.unshare(Namespace.USER | Namespace.IPC)
