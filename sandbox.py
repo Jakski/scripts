@@ -194,6 +194,13 @@ def main():
         Mount.BIND,
         None,
     )
+    libc.mount(
+        "tmpfs".encode(),
+        "/tmp".encode(),
+        "tmpfs".encode(),
+        Mount.NOSUID | Mount.NOEXEC | Mount.NODEV,
+        "size=256M".encode(),
+    )
     os.chdir(home)
     libc.unshare(Namespace.USER | Namespace.IPC)
     map_ids(
