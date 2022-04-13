@@ -114,13 +114,13 @@ class Libc(Library):
 
 def map_ids(uids, gids):
     with open("/proc/self/uid_map", "w") as f:
-        for internal, external in uids:
-            f.write(f"{internal} {external} 1\n")
+        for internal, external, count in uids:
+            f.write(f"{internal} {external} {count}\n")
     with open("/proc/self/setgroups", "w") as f:
         f.write("deny\n")
     with open("/proc/self/gid_map", "w") as f:
-        for internal, external in gids:
-            f.write(f"{internal} {external} 1\n")
+        for internal, external, count in gids:
+            f.write(f"{internal} {external} {count}\n")
 
 
 def get_runtime_dir():
@@ -180,7 +180,7 @@ def ensure_dbus_proxy(name, src, dest):
         )
 
 
-def main():
+def parse_arguments():
     parser = ArgumentParser(description="configure sandbox")
     parser.add_argument(
         "--profile",
@@ -206,25 +206,11 @@ def main():
         default=["/bin/bash"],
         help="command to run in sandboxed environment",
     )
-    args = parser.parse_args()
-    args.dir = os.path.realpath(args.dir)
-    ensure_dbus_proxy("dbus-sandbox-bus.service", "bus", "bus-sandbox")
-    ensure_dbus_proxy(
-        "dbus-sandbox-systemd.service", "systemd/private", "systemd/private-sandbox"
-    )
-    uid = os.getuid()
-    gid = os.getgid()
-    home = os.path.expanduser("~")
+    return parser.parse_args()
+
+
+def setup_mountpoints(libc, args, home):
     runtime_dir = get_runtime_dir()
-    if args.profile:
-        apparmor = AppArmor()
-    libc = Libc()
-    libc.unshare(Namespace.USER | Namespace.MOUNT)
-    map_ids(
-        ((0, uid),),
-        ((0, gid),),
-    )
-    os.chdir("/")
     libc.mount(
         source=args.dir.encode(),
         target=home.encode(),
@@ -253,11 +239,33 @@ def main():
         mountflags=Mount.NOSUID | Mount.NOEXEC | Mount.NODEV,
         data="size=1G".encode(),
     )
+
+
+def main():
+    args = parse_arguments()
+    args.dir = os.path.realpath(args.dir)
+    ensure_dbus_proxy("dbus-sandbox-bus.service", "bus", "bus-sandbox")
+    ensure_dbus_proxy(
+        "dbus-sandbox-systemd.service", "systemd/private", "systemd/private-sandbox"
+    )
+    uid = os.getuid()
+    gid = os.getgid()
+    home = os.path.expanduser("~")
+    if args.profile:
+        apparmor = AppArmor()
+    libc = Libc()
+    libc.unshare(Namespace.USER | Namespace.MOUNT)
+    map_ids(
+        ((0, uid, 1),),
+        ((0, gid, 1),),
+    )
+    os.chdir("/")
+    setup_mountpoints(libc, args, home)
     os.chdir(home)
     libc.unshare(Namespace.USER | Namespace.IPC)
     map_ids(
-        ((uid, 0),),
-        ((gid, 0),),
+        ((uid, 0, 1),),
+        ((gid, 0, 1),),
     )
     if args.profile:
         try:
