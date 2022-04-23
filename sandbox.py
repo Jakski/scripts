@@ -3,7 +3,6 @@
 import errno
 import time
 import os
-import dbus
 from distutils.spawn import find_executable
 from argparse import ArgumentParser
 from enum import IntFlag
@@ -236,7 +235,7 @@ def setup_mountpoints(libc, args, home):
         source="tmpfs".encode(),
         target="/tmp".encode(),
         filesystemtype="tmpfs".encode(),
-        mountflags=Mount.NOSUID | Mount.NOEXEC | Mount.NODEV,
+        mountflags=Mount.NOSUID | Mount.NODEV,
         data="size=1G".encode(),
     )
 
