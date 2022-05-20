@@ -70,20 +70,12 @@ prepare_filesystem() {
 
 install_os() {
 	echo ">>> Installing operating system..."
-	declare archive
 	mkdir -vp "$arg_cache_dir"
-	archive=$(realpath -m "${arg_cache_dir}/debootstrap.tar.gz")
-	if [ -e "$archive" ]; then
-		echo "Using ${archive} cache file..."
-		tar -C "$MOUNTPOINT" -xzf "$archive"
-	else
-		debootstrap \
-			--include="$(echo "${PACKAGES[*]}" | tr " " ",")" \
-			"$arg_release" \
-			"$MOUNTPOINT"
-		echo "Caching base system..."
-		tar -C "$MOUNTPOINT" -czf "$archive" .
-	fi
+	debootstrap \
+		--cache-dir="$arg_cache_dir" \
+		--include="$(echo "${packages[*]}" | tr " " ",")" \
+		"$arg_release" \
+		"$MOUNTPOINT"
 	mount -t devtmpfs dev "${MOUNTPOINT}/dev"
 	mount -t proc proc "${MOUNTPOINT}/proc"
 	mount -t sysfs sys "${MOUNTPOINT}/sys"
@@ -97,12 +89,12 @@ configure_os() {
 	echo ">>> Configuring operating system..."
 	pushd "$MOUNTPOINT" >/dev/null
 
-	# TODO: Allow overriding keyboard layout and locale
-	sed -i -e 's/^XKBLAYOUT=.*/XKBLAYOUT="pl"/' etc/default/keyboard
+	sed -i -e "s/^XKBLAYOUT=.*/XKBLAYOUT=\"${arg_keyboard}\"/" etc/default/keyboard
+	# TODO: Allow overriding locale
 	sed -i -e 's/^# \(en_US.UTF-8 UTF-8\)/\1/' -e 's/^# \(pl_PL.UTF-8 UTF-8\)/\1/' etc/locale.gen
 	chroot . locale-gen
 	chroot . update-locale LANG=en_US.UTF-8
-	chroot . ln -sf /usr/share/zoneinfo/Europe/Warsaw /etc/localtime
+	chroot . ln -sf "/usr/share/zoneinfo/${arg_timezone}" /etc/localtime
 
 	if [ -n "${ROOT_PASSWORD:-}" ]; then
 		echo -e "${ROOT_PASSWORD}\n${ROOT_PASSWORD}" | chroot . passwd
@@ -122,6 +114,12 @@ configure_os() {
 	EOF
 	echo "$arg_hostname" > etc/hostname
 
+	truncate -s 0 etc/resolv.conf
+	declare nameserver
+	for nameserver in "${arg_nameservers[@]}"; do
+		echo "nameserver ${nameserver}" >> etc/resolv.conf
+	done
+
 	popd >/dev/null
 }
 
@@ -133,10 +131,56 @@ copy_files() {
 	done
 }
 
+preset_common() {
+	apt-get update
+	apt-get full-upgrade -y
+	apt-get install -y openssh-server
+
+	cat > /etc/systemd/network/80-dhcp.network <<- EOF
+		[Match]
+		Name=en*
+		[Network]
+		DHCP=yes
+	EOF
+	systemctl enable systemd-networkd.service
+}
+
+preset_docker() {
+	preset_common
+	apt-get install -y ca-certificates curl gnupg lsb-release
+	curl -fsSL https://download.docker.com/linux/debian/gpg \
+		| gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+	{
+		echo -n "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg]"
+		echo " https://download.docker.com/linux/debian $(lsb_release -cs) stable"
+	} > /etc/apt/sources.list.d/docker.list
+	apt-get update
+	apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+	cat > /etc/docker/daemon.json <<- EOF
+		{
+			"hosts": [
+				"tcp://0.0.0.0:2375",
+				"unix:///var/run/docker.sock"
+			]
+		}
+	EOF
+}
+
+apply_presets() {
+	declare preset
+	for preset in "${arg_presets[@]}"; do
+		echo ">>> Applying preset ${preset}..."
+		{
+			echo "export MKIMAGE_PRESET=${preset}"
+			cat "$0"
+		} | chroot "$MOUNTPOINT" /bin/bash -
+	done
+}
+
 run_scripts() {
 	declare script
 	for script in "${arg_scripts[@]}"; do
-		echo "Running script ${script}..."
+		echo ">>> Running script ${script}..."
 		{
 			echo "set -euo pipefail -o errtrace"
 			echo "shopt -s inherit_errexit nullglob"
@@ -158,11 +202,11 @@ parse_arguments() {
 		declare option=$1; shift
 		case "$option" in
 		--copy)
-			arg_cp_srcs=("$1"); shift
-			arg_cp_dsts=("$1"); shift
+			arg_cp_srcs+=("$1"); shift
+			arg_cp_dsts+=("$1"); shift
 		;;
 		--script)
-			arg_scripts=("$1"); shift
+			arg_scripts+=("$1"); shift
 		;;
 		--release)
 			arg_release=$1; shift
@@ -178,6 +222,18 @@ parse_arguments() {
 		;;
 		--hostname)
 			arg_hostname=$1; shift
+		;;
+		--timezone)
+			arg_timezone=$1; shift
+		;;
+		--keyboard)
+			arg_keyboard=$1; shift
+		;;
+		--nameserver)
+			arg_nameservers+=("$1"); shift
+		;;
+		--preset)
+			arg_presets+=("$1"); shift
 		;;
 		*)
 			if [ -n "$arg_output_img" ]; then
@@ -197,18 +253,30 @@ parse_arguments() {
 	if [ -z "$arg_output_img" ]; then
 		echo "Output image needs to be specified with --output" >&2
 		return 1
-	fi 
+	fi
+	if [ "${#arg_nameservers[@]}" = 0 ]; then
+		arg_nameservers=("1.1.1.1" "8.8.8.8")
+	fi
+	arg_cache_dir=$(realpath -m "$arg_cache_dir")
 }
-
 
 main() {
 	trap 'on_error ${BASH_SOURCE[0]}:${LINENO}' ERR
 	SCRIPT_DIR=$(dirname "$(readlink -f "$0")")
-	declare -a PACKAGES=(
+
+	if [ "${MKIMAGE_PRESET:-}" != "" ]; then
+		"preset_${MKIMAGE_PRESET}"
+		return 0
+	fi
+
+	declare -a packages=(
 		e2fsprogs
 		grub-pc
 		wget
+		curl
+		neovim
 		haveged
+		cloud-guest-utils
 		console-setup
 		locales
 		dbus
@@ -227,17 +295,22 @@ main() {
 	declare -a arg_cp_srcs=()
 	declare -a arg_cp_dsts=()
 	declare -a arg_scripts=()
+	declare -a arg_presets=()
+	declare -a arg_nameservers=()
 	declare arg_size="10G"
 	declare arg_release="bullseye"
 	declare arg_output_img=""
 	declare arg_hostname="sandbox"
 	declare arg_cache_dir=".cache"
+	declare arg_keyboard="pl"
+	declare arg_timezone="Europe/Warsaw"
 	parse_arguments "$@"
 
 	prepare_filesystem
 	install_os
 	configure_os
 	copy_files
+	apply_presets
 	run_scripts
 	install_bootloader
 	cleanup
