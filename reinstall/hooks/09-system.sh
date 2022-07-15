@@ -7,8 +7,8 @@ echo -e "${ROOT_PASSWORD}\n${ROOT_PASSWORD}" | passwd
 useradd -m -s /bin/bash -G sudo developer
 mkdir /home/developer/.ssh
 chmod 700 /home/developer/.ssh
-mv "${FILES_DIR}/authorized_keys" /home/developer/.ssh/authorized_keys
-chmod 600 /home/developer/.ssh/authorized_keys
+#mv "${FILES_DIR}/authorized_keys" /home/developer/.ssh/authorized_keys
+#chmod 600 /home/developer/.ssh/authorized_keys
 chown -R developer:developer /home/developer
 echo "developer ALL = (ALL) NOPASSWD: ALL" > /etc/sudoers.d/developer
 chmod 440 /etc/sudoers.d/developer
