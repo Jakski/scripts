@@ -15,7 +15,7 @@ PROGRAM_NAME=vault
 MAPPER_DIR=/dev/mapper
 
 catch_exception() {
-	local exit_code=$?
+	declare exit_code=$?
 	if [ "$exit_code" -ne 0 ]; then
 		echo "Failed with exit code: $exit_code" >&2
 	fi
@@ -81,7 +81,7 @@ get_md5sum() {
 }
 
 umount_subcommand() {
-	local \
+	declare \
 		OPTIND \
 		destination=""
 	while getopts ":hd:" opt; do
@@ -103,7 +103,7 @@ umount_subcommand() {
 		echo "No mount point passed" >&2
 		exit 1
 	}
-	local container_name loop_dev
+	declare container_name loop_dev
 	container_name=$(basename "$(findmnt -flM "$destination" -o SOURCE -l | tail -n +2)")
 	loop_dev=$(cryptsetup status "$container_name" | awk '$1 == "device:" { print $2 }')
 	umount "$destination"
@@ -112,15 +112,15 @@ umount_subcommand() {
 }
 
 mount_subcommand() {
-	local \
+	declare \
 		OPTIND \
 		destination="" \
-		container_path="" \
-		mount_params=""
+		container_path=""
+	declare -a mount_params=()
 	while getopts ":hd:p:c:" opt; do
 		case "$opt" in
 		p)
-			mount_params=$OPTARG
+			mount_params+=("$OPTARG")
 			;;
 		c)
 			container_path=$(realpath "$OPTARG")
@@ -151,8 +151,8 @@ mount_subcommand() {
 		exit 1
 	}
 	mkdir -p "$destination"
-	local loop_dev container_name password
-	read -s -p "Enter container password: " password
+	declare loop_dev container_name password
+	read -r -s -p "Enter container password: " password
 	echo
 	loop_dev=$(losetup --show -f "$container_path")
 	container_name="${PROGRAM_NAME}-$(echo "$container_path" | get_md5sum)"
@@ -160,11 +160,11 @@ mount_subcommand() {
 		losetup -d "$loop_dev"
 		exit 1
 	}
-	mount $mount_params "${MAPPER_DIR}/${container_name}" "$destination"
+	mount "${mount_params[@]}" "${MAPPER_DIR}/${container_name}" "$destination"
 }
 
 grow_subcommand(){
-	local \
+	declare \
 		OPTIND \
 		size="" \
 		destination="" \
@@ -198,8 +198,8 @@ grow_subcommand(){
 		echo "Size must be an integer" >&2
 		exit 1
 	}
-	local loop_dev container_name password
-	read -s -p "Enter container password: " password
+	declare loop_dev container_name password
+	read -r -s -p "Enter container password: " password
 	echo
 	loop_dev=$(losetup --show -f "$destination")
 	container_name="${PROGRAM_NAME}-$(echo "$destination" | get_md5sum)"
@@ -215,7 +215,7 @@ grow_subcommand(){
 }
 
 create_subcommand() {
-	local \
+	declare \
 		OPTIND \
 		size="256M" \
 		destination="" \
@@ -253,10 +253,10 @@ create_subcommand() {
 		echo "Size must be an integer" >&2
 		exit 1
 	}
-	local loop_dev container_name password password_verification
-	read -s -p "Enter container password: " password
+	declare loop_dev container_name password password_verification
+	read -r -s -p "Enter container password: " password
 	echo
-	read -s -p "Verify container password: " password_verification
+	read -r -s -p "Verify container password: " password_verification
 	echo
 	if [ "$password" != "$password_verification" ]; then
 		echo "Passwords doesn't match" >&2
@@ -278,7 +278,7 @@ main() {
 		echo "No subcommand specified" >&2
 		exit 1
 	}
-	local subcommand=$1
+	declare subcommand=$1
 	case "$subcommand" in
 	mount|umount|create|grow)
 		shift
