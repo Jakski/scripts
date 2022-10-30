@@ -345,6 +345,52 @@ test_apt_repository() {
 	echo "ok"
 }
 
+module_apt_hold() {
+	eval "$(get_options "names" "$@")"
+	declare -a \
+		pending=() \
+		present=() \
+		packages=()
+	declare \
+		package \
+		is_held \
+		present_package
+	dpkg-query -f '${db:Status-Abbrev} ${Package} ${Version}\n' -W | mapfile -t present
+	read -r -a packages <<< "$OPT_NAMES"
+	for package in "${packages[@]}"; do
+		is_held=0
+		for present_package in "${present[@]}"; do
+			if [[ ${present_package} =~ ^h.[[:space:]]+${package}[[:space:]] ]]; then
+				is_installed=1
+				break
+			fi
+			if [ "$is_held" = 0 ]; then
+				pending+=("$package")
+			fi
+		done
+	done
+	if [ "${#pending[@]}" != 0 ]; then
+		check_do "Hold APT packages: ${pending[*]}" \
+			apt-mark hold "${pending[@]}"
+	fi
+}
+
+TEST_SUITES+=(test_apt_hold)
+test_apt_hold() {
+	echo -n "${FUNCNAME[0]} "
+	launch_container "debian"
+	exec_container > /dev/null <<- "EOF"
+		status=$(apt-mark showhold perl)
+		[ -z "$status" ]
+		module_apt_hold \
+			names "perl"
+		status=$(apt-mark showhold perl)
+		[ "$status" = "perl" ]
+	EOF
+	remove_container
+	echo "ok"
+}
+
 add_handler() {
 	declare \
 		cmd="" \
