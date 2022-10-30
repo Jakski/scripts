@@ -475,6 +475,87 @@ module_yarn() {
 }
 
 ###
+# Ensure, that systemd service is in defined state.
+#
+# Requirements:
+# - get_options
+module_systemd_service() {
+	eval "$(get_options "name active enabled" "$@")"
+	declare \
+		enabled \
+		enable_cmd \
+		activated \
+		active_cmd
+	if [ -n "$OPT_ENABLED" ]; then
+		enabled=1
+		systemctl is-enabled "$OPT_NAME" &> /dev/null || enabled=0
+		if [ "$OPT_ENABLED" = 1 ]; then
+			enable_cmd="enable"
+		else
+			enable_cmd="disable"
+		fi
+		if [ "$enabled" != "$OPT_ENABLED" ]; then
+			check_do "${enable_cmd^} ${OPT_NAME}" \
+				systemctl "$enable_cmd" "$OPT_NAME"
+		fi
+	fi
+	if [ -n "$OPT_ACTIVE" ]; then
+		activated=1
+		systemctl is-active "$OPT_NAME" &> /dev/null || activated=0
+		if [ "$OPT_ACTIVE" = 1 ]; then
+			active_cmd="start"
+		else
+			active_cmd="stop"
+		fi
+		if [ "$activated" != "$OPT_ACTIVE" ]; then
+			check_do "${active_cmd^} ${OPT_NAME}" \
+				systemctl "$active_cmd" "$OPT_NAME"
+		fi
+	fi
+}
+
+TEST_SUITES+=(test_systemd_service)
+test_systemd_service() {
+	echo -n "${FUNCNAME[0]} "
+	launch_container "debian"
+	exec_container > /dev/null <<- "EOF"
+		declare -a INVOCATIONS=()
+		systemctl() {
+			INVOCATIONS+=("$*")
+			case "$1" in
+			is-active)
+				return "$ACTIVATED_RETURN"
+			;;
+			is-enabled)
+				return "$ENABLED_RETURN"
+			;;
+			esac
+		}
+		ACTIVATED_RETURN=0
+		ENABLED_RETURN=0
+		module_systemd_service \
+			name "test" \
+			active 1
+		[ "${INVOCATIONS[0]}" = "is-active test" ]
+		[ "${#INVOCATIONS[@]}" = 1 ]
+		INVOCATIONS=()
+		ACTIVATED_RETURN=0
+		ENABLED_RETURN=1
+		module_systemd_service \
+			name "test" \
+			active 0 \
+			enabled 1
+		[ "${INVOCATIONS[0]}" = "is-enabled test" ]
+		[ "${INVOCATIONS[1]}" = "enable test" ]
+		[ "${INVOCATIONS[2]}" = "is-active test" ]
+		[ "${INVOCATIONS[3]}" = "stop test" ]
+		[ "${#INVOCATIONS[@]}" = 4 ]
+	EOF
+	remove_container
+	echo "ok"
+}
+
+###
 # Record command for later invocation.
 add_handler() {
 	declare \
@@ -614,14 +695,25 @@ EOF
 main() {
 	trap 'on_error "${BASH_SOURCE[0]}:${LINENO}"' ERR
 	trap on_exit EXIT
-	declare test_suite
+	declare \
+		test_suite \
+		selected_suite
 	if [ "${TEST_MODULES:-0}" = 1 ]; then
 		return 0
 	fi
 	build_images
 	shellcheck "$SCRIPT_FILE"
 	for test_suite in "${TEST_SUITES[@]}"; do
-		"$test_suite"
+		if [ "$#" = 0 ]; then
+			"$test_suite"
+			continue
+		fi
+		for selected_suite in "$@"; do
+			if [ "$selected_suite" = "$test_suite" ]; then
+				"$test_suite"
+				continue
+			fi
+		done
 	done
 }
 
