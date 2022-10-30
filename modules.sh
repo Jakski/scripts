@@ -26,6 +26,8 @@ on_exit() {
 	fi
 }
 
+###
+# Parse options as key-value pairs and output shell compatible declare statements.
 get_options() {
 	declare \
 		keys \
@@ -59,6 +61,8 @@ get_options() {
 	done
 }
 
+###
+# Skip task in check mode.
 check_do() {
 	declare comment=$1
 	shift
@@ -70,6 +74,11 @@ check_do() {
 	fi
 }
 
+###
+# Ensure, that line exists in file. Add it to the end, if missing.
+#
+# Requirements:
+#  - get_options
 module_line_in_file() {
 	eval "$(get_options "path line" "$@")"
 	declare \
@@ -113,6 +122,12 @@ test_line_in_file() {
 	echo "ok"
 }
 
+###
+# Ensure, that file has mode, group or owner.
+#
+# Requirements:
+# - get_options
+# - check_do
 module_file_permissions() {
 	eval "$(get_options "mode owner group path" "$@")"
 	declare -a details
@@ -166,6 +181,12 @@ test_file_permissions() {
 	echo "ok"
 }
 
+###
+# Ensure, that file has content.
+#
+# Requirements:
+# - get_options
+# - check_do
 module_file_content() {
 	eval "$(get_options "path content" "$@")"
 	declare \
@@ -217,6 +238,11 @@ test_file_content() {
 	echo "ok"
 }
 
+###
+# Ensure, that APT package is installed.
+#
+# Requirements:
+# - get_options
 module_apt_packages() {
 	eval "$(get_options "names" "$@")"
 	declare -a \
@@ -273,6 +299,14 @@ test_apt_packages() {
 	echo "ok"
 }
 
+###
+# Ensure, that APT repository exists.
+#
+# Requirements:
+# - get_options
+# - check_do
+# - module_file_content
+# - module_file_permissions
 module_apt_repository() {
 	eval "$(get_options "\
 		name \
@@ -320,7 +354,8 @@ module_apt_repository() {
 		fi
 	fi
 	if [ "${OPT_UPDATE:-1}" = 1 ] && [ -n "$delta" ]; then
-		check_do "" apt-get update
+		check_do "Update APT repositories" \
+			apt-get update
 	fi
 }
 
@@ -345,6 +380,12 @@ test_apt_repository() {
 	echo "ok"
 }
 
+###
+# Mark APT packages as held.
+#
+# Requirements:
+# - get_options
+# - check_do
 module_apt_hold() {
 	eval "$(get_options "names" "$@")"
 	declare -a \
@@ -391,6 +432,50 @@ test_apt_hold() {
 	echo "ok"
 }
 
+###
+# Setup NodeJS.
+#
+# Requirements:
+# - get_options
+# - module_apt_repository
+# - module_apt_packages
+module_nodejs() {
+	eval "$(get_options "version" "$@")"
+	declare codename
+	{
+		#shellcheck disable=SC1091
+		source /etc/os-release
+		echo "$VERSION_CODENAME"
+	} | read -r codename
+	module_apt_repository \
+		name nodesource \
+		url "https://deb.nodesource.com/node_${OPT_VERSION}.x" \
+		keyring_url "https://deb.nodesource.com/gpgkey/nodesource.gpg.key" \
+		keyring_armored 1 \
+		suites "$codename" \
+		components main
+	module_apt_packages names nodejs
+}
+
+###
+# Setup Yarn.
+#
+# Requirements:
+# - module_apt_repository
+# - module_apt_packages
+module_yarn() {
+	module_apt_repository \
+		name yarn \
+		url "https://dl.yarnpkg.com/debian/" \
+		keyring_url "https://dl.yarnpkg.com/debian/pubkey.gpg" \
+		keyring_armored 1 \
+		suites stable \
+		components main
+	module_apt_packages names yarn
+}
+
+###
+# Record command for later invocation.
 add_handler() {
 	declare \
 		cmd="" \
@@ -411,6 +496,8 @@ add_handler() {
 	HANDLERS+=("$cmd")
 }
 
+###
+# Run recorder tasks.
 flush_handlers() {
 	declare handler
 	for handler in "${HANDLERS[@]}"; do
