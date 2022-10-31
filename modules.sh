@@ -79,27 +79,46 @@ check_do() {
 #
 # Requirements:
 #  - get_options
+#  - module_file_content
 module_line_in_file() {
-	eval "$(get_options "path line" "$@")"
+	eval "$(get_options "path line state pattern" "$@")"
 	: \
-		"${OPT_PATH:?}" \
-		"${OPT_LINE:?}"
+		"${OPT_STATE:=1}" \
+		"${OPT_PATH:?}"
+	if [ -z "$OPT_LINE" ] && [ -z "$OPT_PATTERN" ]; then
+		echo "line or pattern must be provided" >&2
+		return 1
+	fi
 	declare \
-		content \
-		src_line
+		src_line \
+		merged_content
+	declare -a \
+		output_content=() \
+		content=()
 	if [ ! -f "$OPT_PATH" ] && [ "${CHECK_MODE:-0}" = 1 ]; then
 		return 0
 	fi
 	mapfile -t content < "$OPT_PATH"
 	for src_line in "${content[@]}"; do
-		if [ "$src_line" = "$OPT_LINE" ]; then
-			return 0
+		if
+			{ [ -n "$OPT_LINE" ] && [ "$src_line" = "$OPT_LINE" ]; } \
+			|| { [ -n "$OPT_PATTERN" ] && [[ $src_line =~ $OPT_PATTERN ]]; }
+		then
+			if [ "$OPT_STATE" = 1 ]; then
+				return 0
+			else
+				continue
+			fi
 		fi
+		output_content+=("$src_line")
 	done
-	echo "Add line to ${OPT_PATH}:"$'\n'"  ${OPT_LINE}"
-	if [ "${CHECK_MODE:-0}" = 0 ]; then
-		echo "$OPT_LINE" >> "$OPT_PATH"
+	if [ "$OPT_STATE" = 1 ]; then
+		output_content+=("$OPT_LINE")
 	fi
+	merged_content=$(printf "%s\n" "${output_content[@]}")
+	module_file_content \
+		path "$OPT_PATH" \
+		content "$merged_content"$'\n'
 }
 
 TEST_SUITES+=(test_line_in_file)
@@ -117,8 +136,18 @@ test_line_in_file() {
 				line "line 1"
 			module_line_in_file \
 				path /test.txt \
-				line "line 4"
+				line "another line 4"
 			[ "$(wc -l < /test.txt)" = 4 ]
+			module_line_in_file \
+				path /test.txt \
+				line "line 3" \
+				state 0
+			[ "$(wc -l < /test.txt)" = 3 ]
+			module_line_in_file \
+				path /test.txt \
+				pattern "^line" \
+				state 0
+			[ "$(wc -l < /test.txt)" = 1 ]
 		EOF
 		remove_container
 	done
@@ -251,8 +280,10 @@ test_file_content() {
 # Requirements:
 # - get_options
 module_apt_packages() {
-	eval "$(get_options "names" "$@")"
-	: "${OPT_NAMES:?}"
+	eval "$(get_options "names state" "$@")"
+	: \
+		"${OPT_NAMES:?}" \
+		"${OPT_STATE:=1}"
 	declare -a \
 		pending=() \
 		packages=() \
@@ -262,7 +293,8 @@ module_apt_packages() {
 		old_debian_frontend=${DEBIAN_FRONTEND:-} \
 		is_installed \
 		package \
-		present_package
+		present_package \
+		action
 	export DEBIAN_FRONTEND=noninteractive
 	dpkg-query -f '${db:Status-Abbrev} ${Package} ${Version}\n' -W | mapfile -t present
 	read -r -a packages <<< "$OPT_NAMES"
@@ -274,7 +306,7 @@ module_apt_packages() {
 				break
 			fi
 		done
-		if [ "$is_installed" = 0 ]; then
+		if [ "$OPT_STATE" != "$is_installed" ]; then
 			pending+=("$package")
 		fi
 	done
@@ -283,8 +315,13 @@ module_apt_packages() {
 	else
 		options+=("-qq" "--simulate" "-o" "APT::Get::Show-User-Simulation-Note=no")
 	fi
+	if [ "$OPT_STATE" = 1 ]; then
+		action="install"
+	else
+		action="remove"
+	fi
 	if [ "${#pending[@]}" != 0 ]; then
-		apt-get install "${options[@]}" "${pending[@]}"
+		apt-get "$action" "${options[@]}" "${pending[@]}"
 	fi
 	if [ -z "$old_debian_frontend" ]; then
 		unset DEBIAN_FRONTEND
@@ -300,8 +337,12 @@ test_apt_packages() {
 	exec_container > /dev/null <<- "EOF"
 		dpkg-query -s eatmydata &>/dev/null && exit 1 || :
 		module_apt_packages \
-			names "eatmydata perl"
+			names "eatmydata bash"
 		dpkg-query -s eatmydata &>/dev/null
+		module_apt_packages \
+			names "eatmydata" \
+			state 0
+		dpkg-query -s eatmydata &>/dev/null && exit 1 || :
 	EOF
 	remove_container
 	echo "ok"
@@ -401,8 +442,10 @@ test_apt_repository() {
 # - get_options
 # - check_do
 module_apt_hold() {
-	eval "$(get_options "names" "$@")"
-	: "${OPT_NAMES:?}"
+	eval "$(get_options "names state" "$@")"
+	: \
+		"${OPT_NAMES:?}" \
+		"${OPT_STATE:=1}"
 	declare -a \
 		pending=() \
 		present=() \
@@ -410,24 +453,30 @@ module_apt_hold() {
 	declare \
 		package \
 		is_held \
-		present_package
+		present_package \
+		action
 	dpkg-query -f '${db:Status-Abbrev} ${Package} ${Version}\n' -W | mapfile -t present
 	read -r -a packages <<< "$OPT_NAMES"
 	for package in "${packages[@]}"; do
 		is_held=0
 		for present_package in "${present[@]}"; do
 			if [[ ${present_package} =~ ^h.[[:space:]]+${package}[[:space:]] ]]; then
-				is_installed=1
+				is_held=1
 				break
 			fi
-			if [ "$is_held" = 0 ]; then
-				pending+=("$package")
-			fi
 		done
+		if [ "$OPT_STATE" != "$is_held" ]; then
+			pending+=("$package")
+		fi
 	done
+	if [ "$OPT_STATE" = 1 ]; then
+		action="hold"
+	else
+		action="unhold"
+	fi
 	if [ "${#pending[@]}" != 0 ]; then
-		check_do "Hold APT packages: ${pending[*]}" \
-			apt-mark hold "${pending[@]}"
+		check_do "${action^} APT packages: ${pending[*]}" \
+			apt-mark  "$action" "${pending[@]}"
 	fi
 }
 
@@ -436,12 +485,18 @@ test_apt_hold() {
 	echo -n "${FUNCNAME[0]} "
 	launch_container "debian"
 	exec_container > /dev/null <<- "EOF"
-		status=$(apt-mark showhold perl)
+		package="bash"
+		status=$(apt-mark showhold "$package")
 		[ -z "$status" ]
 		module_apt_hold \
-			names "perl"
-		status=$(apt-mark showhold perl)
-		[ "$status" = "perl" ]
+			names "$package"
+		status=$(apt-mark showhold "$package")
+		[ "$status" = "$package" ]
+		module_apt_hold \
+			names "$package" \
+			state 0
+		status=$(apt-mark showhold "$package")
+		[ -z "$status" ]
 	EOF
 	remove_container
 	echo "ok"
