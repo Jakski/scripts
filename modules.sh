@@ -81,6 +81,9 @@ check_do() {
 #  - get_options
 module_line_in_file() {
 	eval "$(get_options "path line" "$@")"
+	: \
+		"${OPT_PATH:?}" \
+		"${OPT_LINE:?}"
 	declare \
 		content \
 		src_line
@@ -130,6 +133,7 @@ test_line_in_file() {
 # - check_do
 module_file_permissions() {
 	eval "$(get_options "mode owner group path" "$@")"
+	: "${OPT_PATH:?}"
 	declare -a details
 	if [ ! -e "$OPT_PATH" ] && [ "${CHECK_MODE:-0}" = 1 ]; then
 		return 0
@@ -189,6 +193,9 @@ test_file_permissions() {
 # - check_do
 module_file_content() {
 	eval "$(get_options "path content" "$@")"
+	: \
+		"${OPT_PATH:?}" \
+		"${OPT_CONTENT:?}"
 	declare \
 		delta="" \
 		old_umask
@@ -245,6 +252,7 @@ test_file_content() {
 # - get_options
 module_apt_packages() {
 	eval "$(get_options "names" "$@")"
+	: "${OPT_NAMES:?}"
 	declare -a \
 		pending=() \
 		packages=() \
@@ -319,6 +327,12 @@ module_apt_repository() {
 		types \
 		update \
 	" "$@")"
+	: \
+		"${OPT_NAME:?}" \
+		"${OPT_URL:?}" \
+		"${OPT_SUITES:?}" \
+		"${OPT_COMPONENTS:?}" \
+		"${OPT_KEYRING_URL:?}"
 	declare \
 		delta="" \
 		repository_file \
@@ -388,6 +402,7 @@ test_apt_repository() {
 # - check_do
 module_apt_hold() {
 	eval "$(get_options "names" "$@")"
+	: "${OPT_NAMES:?}"
 	declare -a \
 		pending=() \
 		present=() \
@@ -441,6 +456,7 @@ test_apt_hold() {
 # - module_apt_packages
 module_nodejs() {
 	eval "$(get_options "version" "$@")"
+	: "${OPT_VERSION:?}"
 	declare codename
 	{
 		#shellcheck disable=SC1091
@@ -481,6 +497,7 @@ module_yarn() {
 # - get_options
 module_systemd_service() {
 	eval "$(get_options "name active enabled" "$@")"
+	: "${OPT_NAME:?}"
 	declare \
 		enabled \
 		enable_cmd \
