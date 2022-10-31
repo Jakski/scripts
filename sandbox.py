@@ -202,7 +202,7 @@ def parse_arguments():
     parser.add_argument(
         dest="args",
         nargs="*",
-        default=["/bin/bash"],
+        default=["/usr/bin/ssh-agent", "tmux"],
         help="command to run in sandboxed environment",
     )
     return parser.parse_args()
