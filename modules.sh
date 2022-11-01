@@ -75,6 +75,61 @@ check_do() {
 }
 
 ###
+# Ensure, that symlink exists and points to destination.
+#
+# Requirements:
+#  - get_options
+#  - check_do
+module_symlink() {
+	eval "$(get_options "src dest" "$@")"
+	: \
+		"${OPT_SRC:?}" \
+		"${OPT_DEST:?}"
+	declare src
+	if [ -e "$OPT_DEST" ] && [ ! -L "$OPT_DEST" ]; then
+		echo "Destination exists and is not a symbolic link" >&2
+		return 1
+	fi
+	src=$(readlink -f "$OPT_DEST")
+	if [ ! -e "$OPT_DEST" ] || [ "$src" != "$OPT_SRC" ]; then
+		check_do "Create symbolic link from ${OPT_DEST} to ${OPT_SRC}" \
+			ln -Tsf "$OPT_SRC" "$OPT_DEST"
+	fi
+}
+
+TEST_SUITES+=(test_symlink)
+test_symlink() {
+	echo -n "${FUNCNAME[0]} "
+	declare image
+	for image in debian alpine; do
+		launch_container "$image"
+		exec_container > /dev/null <<- "EOF"
+			module_symlink \
+				src /test1.txt \
+				dest /test.txt
+			src=$(readlink -f /test.txt)
+			[ "$src" = "/test1.txt" ]
+			ln -Tsf /test2.txt /test.txt
+			module_symlink \
+				src /test1.txt \
+				dest /test.txt
+			[ "$src" = "/test1.txt" ]
+			rm -f /test.txt
+			touch /test.txt
+			failed=0
+			module_symlink \
+				src /test1.txt \
+				dest /test.txt \
+				2>/dev/null \
+				|| { failed=1; }
+			[ "$failed" = 1 ]
+		EOF
+		remove_container
+	done
+	echo "ok"
+}
+
+###
 # Ensure, that line exists in file. Add it to the end, if missing.
 #
 # Requirements:
