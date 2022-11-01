@@ -734,6 +734,43 @@ test_handlers() {
 	echo "ok"
 }
 
+###
+# Verify checksum in pipe. All input data is buffered in memory.
+verify_checksum() {
+	declare \
+		algorithm=$1 \
+		sum=$2 \
+		input_sum \
+		input
+	input=$(base64 -w 0)
+	input_sum=$(echo "$input" | base64 -d | "${algorithm}sum" | cut -d " " -f 1)
+	if [ "$sum" != "$input_sum" ]; then
+		echo "Input checksum mismatch: ${input_sum}" >&2
+		return 1
+	fi
+	echo "$input" | base64 -d
+}
+
+TEST_SUITES+=(test_verify_checksum)
+test_verify_checksum() {
+	echo -n "${FUNCNAME[0]} "
+	declare image
+	for image in debian alpine; do
+		launch_container "$image"
+		exec_container > /dev/null <<- "EOF"
+			payload="test"
+			checksum=$(echo "$payload" | sha256sum | cut -d " " -f 1)
+			echo "$payload" | verify_checksum sha256 "$checksum" > /dev/null
+			failed=0
+			echo "${payload}extra" | verify_checksum sha256 "$checksum" &> /dev/null \
+				|| { failed=1; }
+			[ "$failed" = 1 ]
+		EOF
+		remove_container
+	done
+	echo "ok"
+}
+
 launch_container() {
 	declare image="modules:${1}"
 	TEST_CONTAINER="modules-test-${RANDOM}"
