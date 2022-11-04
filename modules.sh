@@ -558,6 +558,104 @@ test_apt_hold() {
 }
 
 ###
+# Ensure user's state.
+#
+# Requirements:
+# - get_options
+# - check_do
+module_user() {
+	eval "$(get_options "name uid gid comment create_home home shell force remove move_home state" "$@")"
+	: \
+		"${OPT_NAME:?}" \
+		"${OPT_CREATE_HOME:=1}" \
+		"${OPT_FORCE:=0}" \
+		"${OPT_REMOVE:=0}" \
+		"${OPT_MOVE_HOME:=0}" \
+		"${OPT_STATE:=1}"
+	declare \
+		name \
+		uid \
+		gid \
+		comment \
+		home \
+		shell \
+		i
+	declare -a \
+		opts=() \
+		common_opts=()
+	[ -z "$OPT_UID" ] || common_opts+=("--uid" "$OPT_UID")
+	[ -z "$OPT_GID" ] || common_opts+=("--gid" "$OPT_GID")
+	[ -z "$OPT_COMMENT" ] || common_opts+=("--comment" "$OPT_COMMENT")
+	[ -z "$OPT_HOME" ] || common_opts+=("--home-dir" "$OPT_HOME")
+	[ -z "$OPT_SHELL" ] || common_opts+=("--shell" "$OPT_SHELL")
+	i=$(getent passwd "$OPT_NAME") || i=""
+	if [ -z "$i" ]; then
+		if [ "$OPT_STATE" = 0 ]; then
+			return 0
+		else
+			[ "$OPT_CREATE_HOME" != 1 ] || opts+=("--create-home")
+			check_do "Create user ${OPT_NAME}" \
+				useradd "${opts[@]}" "${common_opts[@]}" "$OPT_NAME"
+		fi
+	else
+		if [ "$OPT_STATE" = 0 ]; then
+			[ "$OPT_FORCE" != 1 ] || opts+=("--force")
+			[ "$OPT_REMOVE" != 1 ] || opts+=("--remove")
+			check_do "Remove user ${OPT_NAME}" \
+				userdel "${opts[@]}" "$OPT_NAME"
+		else
+			IFS=":" read -r name i uid gid comment home shell <<< "$i"
+			if
+				[ "$uid" != "${OPT_UID:-"$uid"}" ] \
+				|| [ "$gid" != "${OPT_GID:-"$gid"}" ] \
+				|| [ "$comment" != "${OPT_COMMENT:-"$comment"}" ] \
+				|| [ "$home" != "${OPT_HOME:-"$home"}" ] \
+				|| [ "$shell" != "${OPT_SHELL:-"$shell"}" ]
+			then
+				check_do "Modify user ${OPT_NAME}" \
+					usermod "${common_opts[@]}" "$OPT_NAME"
+			fi
+		fi
+	fi
+}
+
+TEST_SUITES+=(test_user)
+test_user() {
+	echo -n "${FUNCNAME[0]} "
+	launch_container "debian"
+	exec_container > /dev/null <<- "EOF"
+		module_user \
+			name test1 \
+			uid 1005 \
+			home /srv/test1 \
+			comment "Test user" \
+			shell /bin/bash
+		entry=$(grep ^test1 /etc/passwd)
+		IFS=":" read -r -a fields <<< "$entry"
+		[ "${fields[0]}" = "test1" ]
+		[ "${fields[2]}" = "1005" ]
+		[ "${fields[4]}" = "Test user" ]
+		[ "${fields[5]}" = "/srv/test1" ]
+		[ -d "/srv/test1" ]
+		[ "${fields[6]}" = "/bin/bash" ]
+		module_user \
+			name test1 \
+			shell /bin/sh
+		entry=$(grep ^test1 /etc/passwd)
+		IFS=":" read -r -a fields <<< "$entry"
+		[ "${fields[6]}" = "/bin/sh" ]
+		module_user \
+			name test1 \
+			state 0
+		failed=0
+		id test1 &>/dev/null || failed=1
+		[ "$failed" = 1 ]
+	EOF
+	remove_container
+	echo "ok"
+}
+
+###
 # Setup NodeJS.
 #
 # Requirements:
@@ -581,6 +679,91 @@ module_nodejs() {
 		suites "$codename" \
 		components main
 	module_apt_packages names nodejs
+}
+
+###
+# Setup Elasticsearch.
+#
+# Requirements:
+# - get_options
+# - module_apt_repository
+# - module_apt_packages
+module_elasticsearch() {
+	eval "$(get_options "version" "$@")"
+	: "${OPT_VERSION:?}"
+	module_apt_repository \
+		name nodesource \
+		url "https://artifacts.elastic.co/packages/${OPT_VERSION}.x/apt" \
+		keyring_url "https://artifacts.elastic.co/GPG-KEY-elasticsearch" \
+		keyring_armored 1 \
+		suites "stable" \
+		components "main"
+	module_apt_packages names elasticsearch
+}
+
+###
+# Setup PHP from Sury.
+#
+# Requirements:
+# - get_options
+# - module_apt_repository
+# - module_apt_packages
+module_php_sury() {
+	eval "$(get_options "version extensions" "$@")"
+	: "${OPT_VERSION:="8.1"}"
+	declare \
+		i \
+		codename
+	declare -a \
+		packages=() \
+		extensions=()
+	if [ -z "$OPT_EXTENSIONS" ]; then
+		extensions=(
+			bcmath
+			bz2
+			cgi
+			cli
+			curl
+			dba
+			fpm
+			gd
+			igbinary
+			imap
+			intl
+			json
+			mbstring
+			mcrypt
+			mysql
+			opcache
+			phpdbg
+			readline
+			redis
+			soap
+			sqlite3
+			xml
+			xmlrpc
+			xsl
+			zip
+		)
+	else
+		read -a -r extensions <<< "$OPT_EXTENSIONS"
+	fi
+	for i in "${extensions[@]}"; do
+		packages+=("php${OPT_VERSION}-${i}")
+	done
+	{
+		#shellcheck disable=SC1091
+		source /etc/os-release
+		echo "$VERSION_CODENAME"
+	} | read -r codename
+	module_apt_repository \
+		name sury \
+		url https://packages.sury.org/php/ \
+		keyring_url https://packages.sury.org/php/apt.gpg \
+		suites "$codename" \
+		components main
+	module_apt_packages \
+		names "${packages[*]}"
 }
 
 ###
