@@ -430,6 +430,7 @@ module_apt_repository() {
 		components \
 		architectures \
 		keyring_url \
+		keyring_prefix \
 		keyring_armored \
 		types \
 		update \
@@ -446,7 +447,11 @@ module_apt_repository() {
 		keyring_file \
 		content
 	repository_file="/etc/apt/sources.list.d/${OPT_NAME}.sources"
-	keyring_file="/usr/share/keyrings/${OPT_NAME}-archive-keyring.gpg"
+	if [ -n "$OPT_KEYRING_PREFIX" ]; then
+		keyring_file="/usr/share/keyrings/${OPT_KEYRING_PREFIX}-archive-keyring.gpg"
+	else
+		keyring_file="/usr/share/keyrings/${OPT_NAME}-archive-keyring.gpg"
+	fi
 	if [ -z "$OPT_ARCHITECTURES" ]; then
 		OPT_ARCHITECTURES=$(dpkg --print-architecture)
 	fi
@@ -710,6 +715,43 @@ module_elasticsearch() {
 		suites "stable" \
 		components "main"
 	module_apt_packages names elasticsearch
+}
+
+###
+# Setup MySQL.
+#
+# Requirements:
+# - get_options
+# - module_apt_repository
+# - module_apt_packages
+module_mysql() {
+	eval "$(get_options "version" "$@")"
+	: "${OPT_VERSION:="8.0"}"
+	declare \
+		keyring_url="https://pgp.mit.edu/pks/lookup?op=get&search=0x467B942D3A79BD29&exact=on&options=mr" \
+		codename
+	{
+		#shellcheck disable=SC1091
+		source /etc/os-release
+		echo "$VERSION_CODENAME"
+	} | read -r codename
+	module_apt_repository \
+		name "mysql-${OPT_VERSION}" \
+		url "http://repo.mysql.com/apt/debian/" \
+		keyring_url "$keyring_url" \
+		keyring_prefix "mysql" \
+		keyring_armored 1 \
+		suites "$codename" \
+		components "mysql-${OPT_VERSION}"
+	module_apt_repository \
+		name "mysql-tools" \
+		url "http://repo.mysql.com/apt/debian/" \
+		keyring_url "$keyring_url" \
+		keyring_prefix "mysql" \
+		keyring_armored 1 \
+		suites "$codename" \
+		components "mysql-tools"
+	module_apt_packages names mysql-community-server
 }
 
 ###
