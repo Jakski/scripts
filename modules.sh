@@ -146,7 +146,8 @@ module_line_in_file() {
 	fi
 	declare \
 		src_line \
-		merged_content
+		merged_content \
+		is_found
 	declare -a \
 		output_content=() \
 		content=()
@@ -154,20 +155,21 @@ module_line_in_file() {
 		return 0
 	fi
 	mapfile -t content < "$OPT_PATH"
+	is_found=0
 	for src_line in "${content[@]}"; do
 		if
 			{ [ -n "$OPT_LINE" ] && [ "$src_line" = "$OPT_LINE" ]; } \
 			|| { [ -n "$OPT_PATTERN" ] && [[ $src_line =~ $OPT_PATTERN ]]; }
 		then
 			if [ "$OPT_STATE" = 1 ]; then
-				return 0
-			else
-				continue
+				is_found=1
+				output_content+=("$OPT_LINE")
 			fi
+			continue
 		fi
 		output_content+=("$src_line")
 	done
-	if [ "$OPT_STATE" = 1 ]; then
+	if [ "$OPT_STATE" = 1 ] && [ "$is_found" = 0 ]; then
 		output_content+=("$OPT_LINE")
 	fi
 	merged_content=$(printf "%s\n" "${output_content[@]}")
@@ -203,6 +205,15 @@ test_line_in_file() {
 				pattern "^line" \
 				state 0
 			[ "$(wc -l < /test.txt)" = 1 ]
+			echo "line 5" >> /test.txt
+			module_line_in_file \
+				path /test.txt \
+				line "another line 6" \
+				pattern "^another"
+			mapfile -t content < /test.txt
+			[ "${content[0]}" = "another line 6" ]
+			[ "${content[1]}" = "line 5" ]
+			[ "${#content[@]}" = 2 ]
 		EOF
 		remove_container
 	done
