@@ -703,7 +703,7 @@ module_elasticsearch() {
 	eval "$(get_options "version" "$@")"
 	: "${OPT_VERSION:?}"
 	module_apt_repository \
-		name nodesource \
+		name elasticsearch \
 		url "https://artifacts.elastic.co/packages/${OPT_VERSION}.x/apt" \
 		keyring_url "https://artifacts.elastic.co/GPG-KEY-elasticsearch" \
 		keyring_armored 1 \
