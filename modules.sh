@@ -602,7 +602,8 @@ module_user() {
 	[ -z "$OPT_UID" ] || common_opts+=("--uid" "$OPT_UID")
 	[ -z "$OPT_GID" ] || common_opts+=("--gid" "$OPT_GID")
 	[ -z "$OPT_COMMENT" ] || common_opts+=("--comment" "$OPT_COMMENT")
-	[ -z "$OPT_HOME" ] || common_opts+=("--home-dir" "$OPT_HOME")
+	# Use short flag to avoid useradd and usermod discrepancy.
+	[ -z "$OPT_HOME" ] || common_opts+=("-d" "$OPT_HOME")
 	[ -z "$OPT_SHELL" ] || common_opts+=("--shell" "$OPT_SHELL")
 	i=$(getent passwd "$OPT_NAME") || i=""
 	if [ -z "$i" ]; then
