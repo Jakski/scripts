@@ -639,36 +639,38 @@ module_user() {
 TEST_SUITES+=(test_user)
 test_user() {
 	echo -n "${FUNCNAME[0]} "
-	launch_container "debian"
-	exec_container > /dev/null <<- "EOF"
-		module_user \
-			name test1 \
-			uid 1005 \
-			home /srv/test1 \
-			comment "Test user" \
-			shell /bin/bash
-		entry=$(grep ^test1 /etc/passwd)
-		IFS=":" read -r -a fields <<< "$entry"
-		[ "${fields[0]}" = "test1" ]
-		[ "${fields[2]}" = "1005" ]
-		[ "${fields[4]}" = "Test user" ]
-		[ "${fields[5]}" = "/srv/test1" ]
-		[ -d "/srv/test1" ]
-		[ "${fields[6]}" = "/bin/bash" ]
-		module_user \
-			name test1 \
-			shell /bin/sh
-		entry=$(grep ^test1 /etc/passwd)
-		IFS=":" read -r -a fields <<< "$entry"
-		[ "${fields[6]}" = "/bin/sh" ]
-		module_user \
-			name test1 \
-			state 0
-		failed=0
-		id test1 &>/dev/null || failed=1
-		[ "$failed" = 1 ]
-	EOF
-	remove_container
+	for image in debian rockylinux; do
+		launch_container "$image"
+		exec_container > /dev/null <<- "EOF"
+			module_user \
+				name test1 \
+				uid 1005 \
+				home /srv/test1 \
+				comment "Test user" \
+				shell /bin/bash
+			entry=$(grep ^test1 /etc/passwd)
+			IFS=":" read -r -a fields <<< "$entry"
+			[ "${fields[0]}" = "test1" ]
+			[ "${fields[2]}" = "1005" ]
+			[ "${fields[4]}" = "Test user" ]
+			[ "${fields[5]}" = "/srv/test1" ]
+			[ -d "/srv/test1" ]
+			[ "${fields[6]}" = "/bin/bash" ]
+			module_user \
+				name test1 \
+				shell /bin/sh
+			entry=$(grep ^test1 /etc/passwd)
+			IFS=":" read -r -a fields <<< "$entry"
+			[ "${fields[6]}" = "/bin/sh" ]
+			module_user \
+				name test1 \
+				state 0
+			failed=0
+			id test1 &>/dev/null || failed=1
+			[ "$failed" = 1 ]
+		EOF
+		remove_container
+	done
 	echo "ok"
 }
 
