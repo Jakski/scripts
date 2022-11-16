@@ -101,7 +101,7 @@ TEST_SUITES+=(test_symlink)
 test_symlink() {
 	echo -n "${FUNCNAME[0]} "
 	declare image
-	for image in debian alpine; do
+	for image in debian alpine rockylinux; do
 		launch_container "$image"
 		exec_container > /dev/null <<- "EOF"
 			module_symlink \
@@ -182,7 +182,7 @@ TEST_SUITES+=(test_line_in_file)
 test_line_in_file() {
 	echo -n "${FUNCNAME[0]} "
 	declare image
-	for image in debian alpine; do
+	for image in debian alpine rockylinux; do
 		launch_container "$image"
 		exec_container > /dev/null <<- "EOF"
 			echo "line 1" > /test.txt
@@ -262,7 +262,7 @@ TEST_SUITES+=(test_file_permissions)
 test_file_permissions() {
 	echo -n "${FUNCNAME[0]} "
 	declare image
-	for image in debian alpine; do
+	for image in debian alpine rockylinux; do
 		launch_container "$image"
 		exec_container > /dev/null <<- "EOF"
 			touch /test.txt
@@ -321,7 +321,7 @@ TEST_SUITES+=(test_file_content)
 test_file_content() {
 	echo -n "${FUNCNAME[0]} "
 	declare image
-	for image in debian alpine; do
+	for image in debian alpine rockylinux; do
 		launch_container "$image"
 		exec_container > /dev/null <<- "EOF"
 			module_file_content \
@@ -992,7 +992,7 @@ TEST_SUITES+=(test_verify_checksum)
 test_verify_checksum() {
 	echo -n "${FUNCNAME[0]} "
 	declare image
-	for image in debian alpine; do
+	for image in debian alpine rockylinux; do
 		launch_container "$image"
 		exec_container > /dev/null <<- "EOF"
 			payload="test"
@@ -1037,7 +1037,6 @@ mapfile -d "" -t dockerfile <<EOF
 FROM debian:stable
 
 ENV PATH=/usr/local/bin:/usr/local/sbin:/bin:/sbin:/usr/bin:/usr/sbin
-ENV SVDIR=/etc/service
 
 RUN apt-get update && apt-get install -y \
 	apt-utils \
@@ -1052,10 +1051,10 @@ RUN apt-get update && apt-get install -y \
 	curl  \
 	nano \
 	rsync \
+	diffutils \
 	ncurses-bin \
-	runit
 
-ENTRYPOINT ["/usr/bin/runsvdir", "-P", "/etc/service"]
+ENTRYPOINT ["/bin/sleep", "infinity"]
 EOF
 	if ! docker image inspect "modules:debian" &> /dev/null; then
 		docker build -t "modules:debian" -f - . <<< "$dockerfile"
@@ -1065,7 +1064,6 @@ mapfile -d "" -t dockerfile <<EOF
 FROM alpine:latest
 
 ENV PATH=/usr/local/bin:/usr/local/sbin:/bin:/sbin:/usr/bin:/usr/sbin
-ENV SVDIR=/etc/service
 
 RUN apk add \
 	bash \
@@ -1077,18 +1075,36 @@ RUN apk add \
 	curl  \
 	nano \
 	rsync \
-	ncurses \
-	runit \
-	&& mkdir -p /etc/service/sshd \
-	&& echo "#!/bin/sh" > /etc/service/sshd/run \
-	&& echo "exec 2>&1" >> /etc/service/sshd/run \
-	&& echo "exec /usr/sbin/sshd -D -e" >> /etc/service/sshd/run \
-	&& chmod +x /etc/service/sshd/run
+	ncurses
 
-ENTRYPOINT ["/sbin/runsvdir", "-P", "/etc/service"]
+ENTRYPOINT ["/bin/sleep", "infinity"]
 EOF
 	if ! docker image inspect "modules:alpine" &> /dev/null; then
 		docker build -t "modules:alpine" -f - . <<< "$dockerfile"
+		echo
+	fi
+mapfile -d "" -t dockerfile << EOF
+FROM rockylinux:9
+
+ENV PATH=/usr/local/bin:/usr/local/sbin:/bin:/sbin:/usr/bin:/usr/sbin
+
+RUN dnf install -y \
+	bash \
+	openssh-server \
+	openssh-clients \
+	jq \
+	findutils \
+	sudo \
+	curl \
+	nano \
+	rsync \
+	ncurses \
+	diffutils
+
+ENTRYPOINT ["/bin/sleep", "infinity"]
+EOF
+	if ! docker image inspect "modules:rockylinux" &> /dev/null; then
+		docker build -t "modules:rockylinux" -f - . <<< "$dockerfile"
 		echo
 	fi
 }
