@@ -2,13 +2,14 @@
 #shellcheck disable=SC2128
 # SC2128: Expanding an array without an index only gives the first element.
 
-set -euo pipefail -o errtrace
+set -eEuo pipefail
 shopt -s inherit_errexit nullglob lastpipe
 
 TEST_CONTAINER=""
 #shellcheck disable=SC2034
 SCRIPT_FILE=$(readlink -f "$0")
 declare -a TEST_SUITES=()
+declare -A REQUIREMENTS=()
 
 on_error() {
 	declare \
@@ -76,10 +77,6 @@ check_do() {
 
 ###
 # Ensure, that symlink exists and points to destination.
-#
-# Requirements:
-#  - get_options
-#  - check_do
 module_symlink() {
 	eval "$(get_options "src dest" "$@")"
 	: \
@@ -96,6 +93,11 @@ module_symlink() {
 			ln -Tsf "$OPT_SRC" "$OPT_DEST"
 	fi
 }
+
+REQUIREMENTS["module_symlink"]="
+get_options
+check_do
+"
 
 TEST_SUITES+=(test_symlink)
 test_symlink() {
@@ -131,10 +133,6 @@ test_symlink() {
 
 ###
 # Ensure, that line exists in file. Add it to the end, if missing.
-#
-# Requirements:
-#  - get_options
-#  - module_file_content
 module_line_in_file() {
 	eval "$(get_options "path line state pattern" "$@")"
 	: \
@@ -177,6 +175,11 @@ module_line_in_file() {
 		path "$OPT_PATH" \
 		content "$merged_content"$'\n'
 }
+
+REQUIREMENTS["module_line_in_file"]="
+get_options
+module_file_content
+"
 
 TEST_SUITES+=(test_line_in_file)
 test_line_in_file() {
@@ -222,10 +225,6 @@ test_line_in_file() {
 
 ###
 # Ensure, that file has mode, group or owner.
-#
-# Requirements:
-# - get_options
-# - check_do
 module_file_permissions() {
 	eval "$(get_options "mode owner group path" "$@")"
 	: "${OPT_PATH:?}"
@@ -258,6 +257,11 @@ module_file_permissions() {
 	fi
 }
 
+REQUIREMENTS["module_file_permissions"]="
+get_options
+check_do
+"
+
 TEST_SUITES+=(test_file_permissions)
 test_file_permissions() {
 	echo -n "${FUNCNAME[0]} "
@@ -282,10 +286,6 @@ test_file_permissions() {
 
 ###
 # Ensure, that file has content.
-#
-# Requirements:
-# - get_options
-# - check_do
 module_file_content() {
 	eval "$(get_options "path content" "$@")"
 	: \
@@ -317,6 +317,11 @@ module_file_content() {
 	fi
 }
 
+REQUIREMENTS["module_file_content"]="
+get_options
+check_do
+"
+
 TEST_SUITES+=(test_file_content)
 test_file_content() {
 	echo -n "${FUNCNAME[0]} "
@@ -342,9 +347,6 @@ test_file_content() {
 
 ###
 # Ensure, that APT package is installed.
-#
-# Requirements:
-# - get_options
 module_apt_packages() {
 	eval "$(get_options "names state" "$@")"
 	: \
@@ -396,6 +398,8 @@ module_apt_packages() {
 	fi
 }
 
+REQUIREMENTS["module_apt_packages"]="get_options"
+
 TEST_SUITES+=(test_apt_packages)
 test_apt_packages() {
 	echo -n "${FUNCNAME[0]} "
@@ -416,12 +420,6 @@ test_apt_packages() {
 
 ###
 # Ensure, that APT repository exists.
-#
-# Requirements:
-# - get_options
-# - check_do
-# - module_file_content
-# - module_file_permissions
 module_apt_repository() {
 	eval "$(get_options "\
 		name \
@@ -485,6 +483,13 @@ module_apt_repository() {
 	fi
 }
 
+REQUIREMENTS["module_apt_repository"]="
+get_options
+check_do
+module_file_content
+module_file_permissions
+"
+
 TEST_SUITES+=(test_apt_repository)
 test_apt_repository() {
 	echo -n "${FUNCNAME[0]} "
@@ -508,10 +513,6 @@ test_apt_repository() {
 
 ###
 # Mark APT packages as held.
-#
-# Requirements:
-# - get_options
-# - check_do
 module_apt_hold() {
 	eval "$(get_options "names state" "$@")"
 	: \
@@ -551,6 +552,11 @@ module_apt_hold() {
 	fi
 }
 
+REQUIREMENTS["module_apt_hold"]="
+get_options
+check_do
+"
+
 TEST_SUITES+=(test_apt_hold)
 test_apt_hold() {
 	echo -n "${FUNCNAME[0]} "
@@ -575,10 +581,6 @@ test_apt_hold() {
 
 ###
 # Ensure user's state.
-#
-# Requirements:
-# - get_options
-# - check_do
 module_user() {
 	eval "$(get_options "name uid gid comment create_home home shell force remove move_home state" "$@")"
 	: \
@@ -636,6 +638,11 @@ module_user() {
 	fi
 }
 
+REQUIREMENTS["module_user"]="
+get_options
+check_do
+"
+
 TEST_SUITES+=(test_user)
 test_user() {
 	echo -n "${FUNCNAME[0]} "
@@ -676,11 +683,6 @@ test_user() {
 
 ###
 # Setup NodeJS.
-#
-# Requirements:
-# - get_options
-# - module_apt_repository
-# - module_apt_packages
 module_nodejs() {
 	eval "$(get_options "version" "$@")"
 	: "${OPT_VERSION:?}"
@@ -700,13 +702,14 @@ module_nodejs() {
 	module_apt_packages names nodejs
 }
 
+REQUIREMENTS["module_nodejs"]="
+get_options
+module_apt_repository
+module_apt_packages
+"
+
 ###
 # Setup Elasticsearch.
-#
-# Requirements:
-# - get_options
-# - module_apt_repository
-# - module_apt_packages
 module_elasticsearch() {
 	eval "$(get_options "version" "$@")"
 	: "${OPT_VERSION:?}"
@@ -720,13 +723,14 @@ module_elasticsearch() {
 	module_apt_packages names elasticsearch
 }
 
+REQUIREMENTS["module_elasticsearch"]="
+get_options
+module_apt_repository
+module_apt_packages
+"
+
 ###
 # Setup MySQL.
-#
-# Requirements:
-# - get_options
-# - module_apt_repository
-# - module_apt_packages
 module_mysql() {
 	eval "$(get_options "version" "$@")"
 	: "${OPT_VERSION:="8.0"}"
@@ -757,13 +761,14 @@ module_mysql() {
 	module_apt_packages names mysql-community-server
 }
 
+REQUIREMENTS["module_mysql"]="
+get_options
+module_apt_repository
+module_apt_packages
+"
+
 ###
 # Setup PHP from Sury.
-#
-# Requirements:
-# - get_options
-# - module_apt_repository
-# - module_apt_packages
 module_php_sury() {
 	eval "$(get_options "version extensions" "$@")"
 	: "${OPT_VERSION:="8.1"}"
@@ -822,12 +827,14 @@ module_php_sury() {
 		names "${packages[*]}"
 }
 
+REQUIREMENTS["module_php_sury"]="
+get_options
+module_apt_repository
+module_apt_packages
+"
+
 ###
 # Setup Yarn.
-#
-# Requirements:
-# - module_apt_repository
-# - module_apt_packages
 module_yarn() {
 	module_apt_repository \
 		name yarn \
@@ -839,11 +846,13 @@ module_yarn() {
 	module_apt_packages names yarn
 }
 
+REQUIREMENTS["module_yarn"]="
+module_apt_repository
+module_apt_packages
+"
+
 ###
 # Ensure, that systemd service is in defined state.
-#
-# Requirements:
-# - get_options
 module_systemd_service() {
 	eval "$(get_options "name active enabled" "$@")"
 	: "${OPT_NAME:?}"
@@ -879,6 +888,8 @@ module_systemd_service() {
 		fi
 	fi
 }
+
+REQUIREMENTS["module_systemd_service"]="get_options"
 
 TEST_SUITES+=(test_systemd_service)
 test_systemd_service() {
@@ -1111,17 +1122,10 @@ EOF
 	fi
 }
 
-main() {
-	trap 'on_error "${BASH_SOURCE[0]}:${LINENO}"' ERR
-	trap on_exit EXIT
+run_tests() {
 	declare \
 		test_suite \
 		selected_suite
-	if [ "${TEST_MODULES:-0}" = 1 ]; then
-		return 0
-	fi
-	build_images
-	shellcheck "$SCRIPT_FILE"
 	for test_suite in "${TEST_SUITES[@]}"; do
 		if [ "$#" = 0 ]; then
 			"$test_suite"
@@ -1134,6 +1138,88 @@ main() {
 			fi
 		done
 	done
+}
+
+export_modules() {
+	declare -a \
+		output \
+		functions=()
+	declare \
+		i \
+		fn \
+		recorded
+	for i in "$@"; do
+		functions+=("module_${i}")
+	done
+mapfile -d "" -t output << "EOF"
+#!/usr/bin/env bash
+
+set -eEuo pipefail
+shopt -s inherit_errexit nullglob lastpipe
+
+on_error() {
+	declare \
+		cmd=$BASH_COMMAND \
+		exit_code=$?
+	if [ "$exit_code" != 0 ]; then
+		echo "Failing with exit code ${exit_code} at ${*} in command: ${cmd}" >&2
+	fi
+	exit "$exit_code"
+}
+EOF
+	echo -n "$output"
+	i=0
+	while [ "$i" != "${#functions[@]}" ]; do
+		fn=${functions["$i"]}
+		fn=${REQUIREMENTS["$fn"]:-}
+		fn=${fn//$'\n'/ }
+		for fn in $fn; do
+			for recorded in "${functions[@]}"; do
+				if [ "$recorded" = "$fn" ]; then
+					break
+				fi
+			done
+			if [ "$recorded" != "$fn" ]; then
+				functions+=("$fn")
+			fi
+		done
+		i=$((i + 1))
+	done
+	for i in "${functions[@]}"; do
+		echo
+		declare -f "$i"
+	done
+mapfile -d "" -t output << "EOF"
+
+trap 'on_error "${BASH_SOURCE[0]}:${LINENO}"' ERR
+
+EOF
+	echo -n "$output"
+}
+
+main() {
+	trap 'on_error "${BASH_SOURCE[0]}:${LINENO}"' ERR
+	trap on_exit EXIT
+	declare arg1
+	if [ "${TEST_MODULES:-0}" = 1 ]; then
+		return 0
+	fi
+	build_images
+	shellcheck "$SCRIPT_FILE"
+	arg1=${1:-}
+	shift
+	case "$arg1" in
+	test)
+		run_tests "$@"
+	;;
+	export)
+		export_modules "$@"
+	;;
+	*)
+		echo "Unknown command: ${arg1}" >&2
+		return 1
+	;;
+	esac
 }
 
 main "$@"
