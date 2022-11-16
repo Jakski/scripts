@@ -1143,14 +1143,11 @@ run_tests() {
 export_modules() {
 	declare -a \
 		output \
-		functions=()
+		functions=("$@")
 	declare \
 		i \
 		fn \
 		recorded
-	for i in "$@"; do
-		functions+=("module_${i}")
-	done
 mapfile -d "" -t output << "EOF"
 #!/usr/bin/env bash
 #shellcheck disable=SC2128
