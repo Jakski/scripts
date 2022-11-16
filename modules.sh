@@ -1153,6 +1153,8 @@ export_modules() {
 	done
 mapfile -d "" -t output << "EOF"
 #!/usr/bin/env bash
+#shellcheck disable=SC2128
+# SC2128: Expanding an array without an index only gives the first element.
 
 set -eEuo pipefail
 shopt -s inherit_errexit nullglob lastpipe
@@ -1213,7 +1215,11 @@ main() {
 		run_tests "$@"
 	;;
 	export)
-		export_modules "$@"
+		if command -v shfmt >/dev/null; then
+			export_modules "$@" | shfmt
+		else
+			export_modules "$@"
+		fi
 	;;
 	*)
 		echo "Unknown command: ${arg1}" >&2
