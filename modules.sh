@@ -1203,12 +1203,12 @@ main() {
 	if [ "${TEST_MODULES:-0}" = 1 ]; then
 		return 0
 	fi
-	build_images
-	shellcheck "$SCRIPT_FILE"
 	arg1=${1:-}
 	shift
 	case "$arg1" in
 	test)
+		build_images
+		shellcheck "$SCRIPT_FILE"
 		run_tests "$@"
 	;;
 	export)
