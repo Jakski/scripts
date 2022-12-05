@@ -702,6 +702,12 @@ module_nodejs() {
 	module_apt_packages names nodejs
 }
 
+REQUIREMENTS["module_nodejs"]="
+get_options
+module_apt_repository
+module_apt_packages
+"
+
 ###
 # Setup PostgreSQL repository without installing anything.
 module_postgresql() {
@@ -720,10 +726,9 @@ module_postgresql() {
 		components main
 }
 
-REQUIREMENTS["module_nodejs"]="
+REQUIREMENTS["module_postgresql"]="
 get_options
 module_apt_repository
-module_apt_packages
 "
 
 ###
