@@ -702,6 +702,24 @@ module_nodejs() {
 	module_apt_packages names nodejs
 }
 
+###
+# Setup PostgreSQL repository without installing anything.
+module_postgresql() {
+	declare codename
+	{
+		#shellcheck disable=SC1091
+		source /etc/os-release
+		echo "$VERSION_CODENAME"
+	} | read -r codename
+	module_apt_repository \
+		name postgresql \
+		url "http://apt.postgresql.org/pub/repos/apt" \
+		keyring_url "https://www.postgresql.org/media/keys/ACCC4CF8.asc" \
+		keyring_armored 1 \
+		suites "${codename}-pgdg" \
+		components main
+}
+
 REQUIREMENTS["module_nodejs"]="
 get_options
 module_apt_repository
