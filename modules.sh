@@ -969,7 +969,7 @@ add_handler() {
 		cmd="${cmd} $(printf "%q" "$arg")"
 	done
 	cmd=${cmd# }
-	for handler in "${HANDLERS[@]}"; do
+	for handler in "${HANDLERS[@]:-}"; do
 		if [ "$handler" = "$cmd" ]; then
 			return 0
 		fi
@@ -981,7 +981,7 @@ add_handler() {
 # Run recorder tasks.
 flush_handlers() {
 	declare handler
-	for handler in "${HANDLERS[@]}"; do
+	for handler in "${HANDLERS[@]:-}"; do
 		eval "$handler"
 	done
 	HANDLERS=()
