@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-#shellcheck disable=SC2128
-# SC2128: Expanding an array without an index only gives the first element.
 
 set -eEuo pipefail
 shopt -s inherit_errexit nullglob lastpipe
@@ -8,8 +6,20 @@ shopt -s inherit_errexit nullglob lastpipe
 TEST_CONTAINER=""
 #shellcheck disable=SC2034
 SCRIPT_FILE=$(readlink -f "$0")
-declare -a TEST_SUITES=()
+declare -a \
+	TEST_SUITES=() \
+	SHARED_FUNCTIONS_BASELINE=() \
+	SHARED_FUNCTIONS=() \
+	SHARED_VARIABLES=()
 declare -A REQUIREMENTS=()
+
+###
+# Save defined functions to generate diff later on.
+set_functions_baseline() {
+	declare -F | mapfile -t SHARED_FUNCTIONS_BASELINE
+}
+
+set_functions_baseline
 
 on_error() {
 	declare \
@@ -22,9 +32,120 @@ on_error() {
 }
 
 on_exit() {
-	if [ -n "$TEST_CONTAINER" ]; then
+	if [ -n "${TEST_CONTAINER:-}" ]; then
 		docker rm -f "$TEST_CONTAINER" > /dev/null || :
 	fi
+}
+
+###
+# Show shared functions definitions.
+share_functions() {
+	declare i
+	for i in "$@"; do
+		SHARED_FUNCTIONS+=("$i")
+	done
+}
+
+###
+# Show shared variables definitions.
+share_variables() {
+	declare i
+	for i in "$@"; do
+		SHARED_VARIABLES+=("$i")
+	done
+}
+
+###
+# Show definitions of functions defined after baseline and clear baseline.
+share_functions_diff() {
+	declare \
+		new_fn \
+		old_fn \
+		is_found
+	declare -a new_functions
+	declare -F | mapfile -t new_functions
+	for new_fn in "${new_functions[@]}"; do
+		is_found=0
+		for old_fn in "${SHARED_FUNCTIONS_BASELINE[@]}"; do
+			if [ "$old_fn" = "$new_fn" ]; then
+				is_found=1
+				break
+			fi
+		done
+		if [ "$is_found" = 0 ]; then
+			new_fn=${new_fn##* }
+			share_functions "$new_fn"
+		fi
+	done
+	SHARED_FUNCTIONS_BASELINE=()
+}
+
+REQUIREMENTS["share_functions_diff"]="
+set_functions_baseline
+share_functions
+"
+
+###
+# Show execution environment as sourceable script.
+get_self() {
+	shopt -po
+	shopt -p
+	declare i
+	for i in "${SHARED_FUNCTIONS[@]}"; do
+		declare -f "$i"
+	done
+	for i in "${SHARED_VARIABLES[@]}"; do
+		declare -p "$i"
+	done
+	trap
+}
+
+REQUIREMENTS["get_self"]="
+set_functions_baseline
+share_variables
+share_functions
+share_functions_diff
+"
+
+###
+# Pipe script into shell started as different user.
+become() {
+	declare \
+		user=$1 \
+		option
+	declare -a cmd=()
+	shift
+	for option in "$@"; do
+		cmd+=("$(printf "%q" "$option")")
+	done
+	{
+		get_self
+		echo "${cmd[*]}"
+	} | sudo -u "$user" /bin/bash -
+}
+
+REQUIREMENTS["become"]="
+get_self
+"
+
+TEST_SUITES+=("test_become")
+test_become() {
+	echo -n "${FUNCNAME[0]} "
+	declare image
+	for image in debian alpine rockylinux; do
+		launch_container "$image"
+		exec_container > /dev/null <<- "EOF"
+			mkdir /test
+			chown daemon:daemon /test
+			become daemon module_file_content \
+				path /test/test.txt \
+				content "hello world"$'\n'
+			[ "$(stat -c "%U %G" /test/test.txt)" = "daemon daemon" ]
+			rm -rf /test
+		EOF
+		remove_container
+	done
+	echo "ok"
 }
 
 ###
@@ -688,7 +809,6 @@ module_nodejs() {
 	: "${OPT_VERSION:?}"
 	declare codename
 	{
-		#shellcheck disable=SC1091
 		source /etc/os-release
 		echo "$VERSION_CODENAME"
 	} | read -r codename
@@ -714,7 +834,6 @@ module_varnish() {
 	eval "$(get_options "version" "$@")"
 	declare codename
 	{
-		#shellcheck disable=SC1091
 		source /etc/os-release
 		echo "$VERSION_CODENAME"
 	} | read -r codename
@@ -739,7 +858,6 @@ module_apt_packages
 module_postgresql() {
 	declare codename
 	{
-		#shellcheck disable=SC1091
 		source /etc/os-release
 		echo "$VERSION_CODENAME"
 	} | read -r codename
@@ -787,7 +905,6 @@ module_mysql() {
 		keyring_url="https://pgp.mit.edu/pks/lookup?op=get&search=0x467B942D3A79BD29&exact=on&options=mr" \
 		codename
 	{
-		#shellcheck disable=SC1091
 		source /etc/os-release
 		echo "$VERSION_CODENAME"
 	} | read -r codename
@@ -862,7 +979,6 @@ module_php_sury() {
 		packages+=("php${OPT_VERSION}-${i}")
 	done
 	{
-		#shellcheck disable=SC1091
 		source /etc/os-release
 		echo "$VERSION_CODENAME"
 	} | read -r codename
@@ -1194,26 +1310,15 @@ export_modules() {
 		output \
 		functions=("$@")
 	declare \
+		shared=0 \
 		i \
 		fn \
 		recorded
 mapfile -d "" -t output << "EOF"
 #!/usr/bin/env bash
-#shellcheck disable=SC2128
-# SC2128: Expanding an array without an index only gives the first element.
 
 set -eEuo pipefail
 shopt -s inherit_errexit nullglob lastpipe
-
-on_error() {
-	declare \
-		cmd=$BASH_COMMAND \
-		exit_code=$?
-	if [ "$exit_code" != 0 ]; then
-		echo "Failing with exit code ${exit_code} at ${*} in command: ${cmd}" >&2
-	fi
-	exit "$exit_code"
-}
 EOF
 	echo -n "$output"
 	i=0
@@ -1233,10 +1338,36 @@ EOF
 		done
 		i=$((i + 1))
 	done
+	if [[ ${functions[*]} =~ (^|[[:space:]])get_self($|[[:space:]]) ]]; then
+		shared=1
+		echo $'\n'"declare -a SHARED_FUNCTIONS=(\"set_functions_baseline\")"
+		echo "declare -a SHARED_VARIABLES=()"$'\n'
+		declare -f set_functions_baseline
+		echo $'\n'"set_functions_baseline"
+	fi
+mapfile -d "" -t output << "EOF"
+
+on_error() {
+	declare \
+		cmd=$BASH_COMMAND \
+		exit_code=$?
+	if [ "$exit_code" != 0 ]; then
+		echo "Failing with exit code ${exit_code} at ${*} in command: ${cmd}" >&2
+	fi
+	exit "$exit_code"
+}
+EOF
+	echo -n "$output"
 	for i in "${functions[@]}"; do
+		if [ "$i" = "set_functions_baseline" ]; then
+			continue
+		fi
 		echo
 		declare -f "$i"
 	done
+	if [ "$shared" = 1 ]; then
+		echo $'\n'"share_functions_diff"
+	fi
 mapfile -d "" -t output << "EOF"
 
 trap 'on_error "${BASH_SOURCE[0]}:${LINENO}"' ERR
@@ -1244,6 +1375,8 @@ trap 'on_error "${BASH_SOURCE[0]}:${LINENO}"' ERR
 EOF
 	echo -n "$output"
 }
+
+share_functions_diff
 
 main() {
 	trap 'on_error "${BASH_SOURCE[0]}:${LINENO}"' ERR

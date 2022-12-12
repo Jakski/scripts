@@ -1,0 +1,9 @@
+# SC2178: Variable was used as an array but is now assigned a string.
+# SC2128: Expanding an array without an index only gives the first element.
+# SC2031: var was modified in a subshell. That change might be lost.
+# SC2030: Modification of var is local.
+# SC1090: Can't follow non-constant source.
+# SC2066: Since you double quoted this, it will not word split, and the loop will only run once.
+# SC1091: Not following: /dev/stdin was not specified as input
+disable=SC2128,SC1090,SC2178,SC2030,SC2031,SC2066,SC1091
+shell=bash
