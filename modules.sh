@@ -709,6 +709,32 @@ module_apt_packages
 "
 
 ###
+# Setup Varnish
+module_varnish() {
+	eval "$(get_options "version" "$@")"
+	declare codename
+	{
+		#shellcheck disable=SC1091
+		source /etc/os-release
+		echo "$VERSION_CODENAME"
+	} | read -r codename
+	module_apt_repository \
+		name varnish \
+		url "https://packagecloud.io/varnishcache/varnish60lts/debian" \
+		keyring "https://packagecloud.io/varnishcache/varnish60lts/gpgkey" \
+		keyring_armored 1 \
+		suites "$codename" \
+		components "main"
+	module_apt_packages names varnish
+}
+
+REQUIREMENTS["module_varnish"]="
+get_options
+module_apt_repository
+module_apt_packages
+"
+
+###
 # Setup PostgreSQL repository without installing anything.
 module_postgresql() {
 	declare codename
