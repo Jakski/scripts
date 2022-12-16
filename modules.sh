@@ -9,8 +9,8 @@ SCRIPT_FILE=$(readlink -f "$0")
 declare -a \
 	TEST_SUITES=() \
 	SHARED_FUNCTIONS_BASELINE=() \
-	SHARED_FUNCTIONS=() \
-	SHARED_VARIABLES=()
+	SHARED_FUNCTIONS=(set_functions_baseline) \
+	SHARED_VARIABLES=(SHARED_FUNCTIONS SHARED_VARIABLES)
 declare -A REQUIREMENTS=()
 
 ###
@@ -25,8 +25,9 @@ on_error() {
 	declare \
 		cmd=$BASH_COMMAND \
 		exit_code=$?
-	if [ "$exit_code" != 0 ]; then
+	if [ "$exit_code" != 0  ] && [ "${HANDLED_ERROR:-}" != 1  ]; then
 		echo "Failing with exit code ${exit_code} at ${*} in command: ${cmd}" >&2
+		HANDLED_ERROR=1
 	fi
 	exit "$exit_code"
 }
@@ -88,8 +89,8 @@ share_functions
 ###
 # Show execution environment as sourceable script.
 get_self() {
-	shopt -po
-	shopt -p
+	echo "set -eEuo pipefail"
+	echo "shopt -s inherit_errexit nullglob lastpipe"
 	declare i
 	for i in "${SHARED_FUNCTIONS[@]}"; do
 		declare -f "$i"
@@ -832,6 +833,7 @@ module_apt_packages
 # Setup Varnish
 module_varnish() {
 	eval "$(get_options "version" "$@")"
+	: "${OPT_VERSION:="60lts"}"
 	declare codename
 	{
 		source /etc/os-release
@@ -839,8 +841,8 @@ module_varnish() {
 	} | read -r codename
 	module_apt_repository \
 		name varnish \
-		url "https://packagecloud.io/varnishcache/varnish60lts/debian" \
-		keyring "https://packagecloud.io/varnishcache/varnish60lts/gpgkey" \
+		url "https://packagecloud.io/varnishcache/varnish${OPT_VERSION}/debian" \
+		keyring_url "https://packagecloud.io/varnishcache/varnish${OPT_VERSION}/gpgkey" \
 		keyring_armored 1 \
 		suites "$codename" \
 		components "main"
@@ -973,7 +975,7 @@ module_php_sury() {
 			zip
 		)
 	else
-		read -a -r extensions <<< "$OPT_EXTENSIONS"
+		read -r -a extensions <<< "$OPT_EXTENSIONS"
 	fi
 	for i in "${extensions[@]}"; do
 		packages+=("php${OPT_VERSION}-${i}")
@@ -1340,24 +1342,13 @@ EOF
 	done
 	if [[ ${functions[*]} =~ (^|[[:space:]])get_self($|[[:space:]]) ]]; then
 		shared=1
-		echo $'\n'"declare -a SHARED_FUNCTIONS=(\"set_functions_baseline\")"
-		echo "declare -a SHARED_VARIABLES=()"$'\n'
+		echo $'\n'"declare -a SHARED_FUNCTIONS=(set_functions_baseline)"
+		echo "declare -a SHARED_VARIABLES=(SHARED_VARIABLES SHARED_FUNCTIONS)"$'\n'
 		declare -f set_functions_baseline
 		echo $'\n'"set_functions_baseline"
 	fi
-mapfile -d "" -t output << "EOF"
-
-on_error() {
-	declare \
-		cmd=$BASH_COMMAND \
-		exit_code=$?
-	if [ "$exit_code" != 0 ]; then
-		echo "Failing with exit code ${exit_code} at ${*} in command: ${cmd}" >&2
-	fi
-	exit "$exit_code"
-}
-EOF
-	echo -n "$output"
+	echo
+	declare -f on_error
 	for i in "${functions[@]}"; do
 		if [ "$i" = "set_functions_baseline" ]; then
 			continue
@@ -1370,7 +1361,8 @@ EOF
 	fi
 mapfile -d "" -t output << "EOF"
 
-trap 'on_error "${BASH_SOURCE[0]}:${LINENO}"' ERR
+trap 'on_error ${BASH_SOURCE[0]:-"stdin"}:\"${FUNCNAME[*]:-}\":${LINENO}' ERR
+trap 'on_error ${BASH_SOURCE[0]:-"stdin"}:\"${FUNCNAME[*]:-}\"' EXIT
 
 EOF
 	echo -n "$output"
@@ -1379,7 +1371,7 @@ EOF
 share_functions_diff
 
 main() {
-	trap 'on_error "${BASH_SOURCE[0]}:${LINENO}"' ERR
+	trap 'on_error ${BASH_SOURCE[0]:-"stdin"}:\"${FUNCNAME[*]:-}\":${LINENO}' ERR
 	trap on_exit EXIT
 	declare arg1
 	if [ "${TEST_MODULES:-0}" = 1 ]; then
