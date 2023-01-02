@@ -19,8 +19,6 @@ set_functions_baseline() {
 	declare -F | mapfile -t SHARED_FUNCTIONS_BASELINE
 }
 
-set_functions_baseline
-
 on_error() {
 	declare \
 		cmd=$BASH_COMMAND \
@@ -47,6 +45,8 @@ share_functions() {
 	done
 }
 
+share_functions share_functions
+
 ###
 # Show shared variables definitions.
 share_variables() {
@@ -55,6 +55,8 @@ share_variables() {
 		SHARED_VARIABLES+=("$i")
 	done
 }
+
+share_functions share_variables
 
 ###
 # Show definitions of functions defined after baseline and clear baseline.
@@ -81,6 +83,8 @@ share_functions_diff() {
 	SHARED_FUNCTIONS_BASELINE=()
 }
 
+share_functions share_functions_diff
+
 REQUIREMENTS["share_functions_diff"]="
 set_functions_baseline
 share_functions
@@ -100,6 +104,8 @@ get_self() {
 	done
 	trap
 }
+
+share_functions get_self
 
 REQUIREMENTS["get_self"]="
 set_functions_baseline
@@ -124,6 +130,8 @@ become() {
 		echo "${cmd[*]}"
 	} | sudo -u "$user" /bin/bash -
 }
+
+share_functions become
 
 REQUIREMENTS["become"]="
 get_self
@@ -184,6 +192,8 @@ get_options() {
 	done
 }
 
+share_functions get_options
+
 ###
 # Skip task in check mode.
 check_do() {
@@ -196,6 +206,8 @@ check_do() {
 		"$@"
 	fi
 }
+
+share_functions check_do
 
 ###
 # Ensure, that symlink exists and points to destination.
@@ -215,6 +227,8 @@ module_symlink() {
 			ln -Tsf "$OPT_SRC" "$OPT_DEST"
 	fi
 }
+
+share_functions module_symlink
 
 REQUIREMENTS["module_symlink"]="
 get_options
@@ -298,6 +312,8 @@ module_line_in_file() {
 		content "$merged_content"$'\n'
 }
 
+share_functions module_line_in_file
+
 REQUIREMENTS["module_line_in_file"]="
 get_options
 module_file_content
@@ -379,6 +395,8 @@ module_file_permissions() {
 	fi
 }
 
+share_functions module_file_permissions
+
 REQUIREMENTS["module_file_permissions"]="
 get_options
 check_do
@@ -438,6 +456,8 @@ module_file_content() {
 		fi
 	fi
 }
+
+share_functions module_file_content
 
 REQUIREMENTS["module_file_content"]="
 get_options
@@ -519,6 +539,8 @@ module_apt_packages() {
 		export DEBIAN_FRONTEND=$old_debian_frontend
 	fi
 }
+
+share_functions module_apt_packages
 
 REQUIREMENTS["module_apt_packages"]="get_options"
 
@@ -605,6 +627,8 @@ module_apt_repository() {
 	fi
 }
 
+share_functions module_apt_repository
+
 REQUIREMENTS["module_apt_repository"]="
 get_options
 check_do
@@ -673,6 +697,8 @@ module_apt_hold() {
 			apt-mark  "$action" "${pending[@]}"
 	fi
 }
+
+share_functions module_apt_hold
 
 REQUIREMENTS["module_apt_hold"]="
 get_options
@@ -760,6 +786,8 @@ module_user() {
 	fi
 }
 
+share_functions module_user
+
 REQUIREMENTS["module_user"]="
 get_options
 check_do
@@ -823,6 +851,8 @@ module_nodejs() {
 	module_apt_packages names nodejs
 }
 
+share_functions module_nodejs
+
 REQUIREMENTS["module_nodejs"]="
 get_options
 module_apt_repository
@@ -849,6 +879,8 @@ module_varnish() {
 	module_apt_packages names varnish
 }
 
+share_functions module_varnish
+
 REQUIREMENTS["module_varnish"]="
 get_options
 module_apt_repository
@@ -872,6 +904,8 @@ module_postgresql() {
 		components main
 }
 
+share_functions module_postgresql
+
 REQUIREMENTS["module_postgresql"]="
 get_options
 module_apt_repository
@@ -891,6 +925,8 @@ module_elasticsearch() {
 		components "main"
 	module_apt_packages names elasticsearch
 }
+
+share_functions module_elasticsearch
 
 REQUIREMENTS["module_elasticsearch"]="
 get_options
@@ -928,6 +964,8 @@ module_mysql() {
 		components "mysql-tools"
 	module_apt_packages names mysql-community-server
 }
+
+share_functions module_mysql
 
 REQUIREMENTS["module_mysql"]="
 get_options
@@ -994,6 +1032,8 @@ module_php_sury() {
 		names "${packages[*]}"
 }
 
+share_functions module_php_sury
+
 REQUIREMENTS["module_php_sury"]="
 get_options
 module_apt_repository
@@ -1012,6 +1052,8 @@ module_yarn() {
 		components main
 	module_apt_packages names yarn
 }
+
+share_functions module_yarn
 
 REQUIREMENTS["module_yarn"]="
 module_apt_repository
@@ -1055,6 +1097,8 @@ module_systemd_service() {
 		fi
 	fi
 }
+
+share_functions module_systemd_service
 
 REQUIREMENTS["module_systemd_service"]="get_options"
 
@@ -1121,6 +1165,8 @@ add_handler() {
 	HANDLERS+=("$cmd")
 }
 
+share_functions add_handler
+
 ###
 # Run recorder tasks.
 flush_handlers() {
@@ -1130,6 +1176,8 @@ flush_handlers() {
 	done
 	HANDLERS=()
 }
+
+share_functions flush_handlers
 
 TEST_SUITES+=(test_handlers)
 test_handlers() {
@@ -1167,6 +1215,8 @@ verify_checksum() {
 	fi
 	echo "$input" | base64 -d
 }
+
+share_functions verify_checksum
 
 TEST_SUITES+=(test_verify_checksum)
 test_verify_checksum() {
@@ -1316,6 +1366,9 @@ export_modules() {
 		i \
 		fn \
 		recorded
+	if [ "${#functions[@]}" = 1 ] && [ "${functions[0]}" = "all" ]; then
+		functions=("${SHARED_FUNCTIONS[@]}")
+	fi
 mapfile -d "" -t output << "EOF"
 #!/usr/bin/env bash
 
@@ -1367,8 +1420,6 @@ trap 'on_error ${BASH_SOURCE[0]:-"stdin"}:\"${FUNCNAME[*]:-}\"' EXIT
 EOF
 	echo -n "$output"
 }
-
-share_functions_diff
 
 main() {
 	trap 'on_error ${BASH_SOURCE[0]:-"stdin"}:\"${FUNCNAME[*]:-}\":${LINENO}' ERR
