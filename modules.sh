@@ -27,18 +27,17 @@ on_exit() {
 		cmd=$BASH_COMMAND \
 		exit_code=$? \
 		i=0 \
-	end="${#FUNCNAME[@]}" \
-	next
-		if [ "$exit_code" = 0 ]; then
-			return 0
-		fi
-	end=$((end - 1))
-	echo "Failing with exit code ${exit_code} in command: ${cmd}" >&2
-	while [ "$i" != "$end" ]; do
-		next=$((i + 1))
-		echo "	${BASH_SOURCE["$next"]:-}:${BASH_LINENO["$i"]}:${FUNCNAME["$next"]}" >&2
-		i=$next
-	done
+		end="${#FUNCNAME[@]}" \
+		next
+	if [ "$exit_code" != 0 ]; then
+		end=$((end - 1))
+		echo "Failing with exit code ${exit_code} in command: ${cmd}" >&2
+		while [ "$i" != "$end" ]; do
+			next=$((i + 1))
+			echo "	${BASH_SOURCE["$next"]:-}:${BASH_LINENO["$i"]}:${FUNCNAME["$next"]}" >&2
+			i=$next
+		done
+	fi
 	declare -F | mapfile -t all_functions
 	for i in "${all_functions[@]}"; do
 		if [[ $i =~ declare[[:space:]]-f[[:space:]]on_exit_[^[:space:]]+$ ]]; then
