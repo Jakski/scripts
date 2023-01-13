@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-set -euo pipefail
+set -eEuo pipefail
 shopt -s inherit_errexit nullglob lastpipe
 
 TEST_CONTAINER=""
@@ -20,23 +20,19 @@ set_functions_baseline() {
 }
 
 on_exit() {
-	declare -a \
-		all_functions=() \
-		parts
 	declare \
 		cmd=$BASH_COMMAND \
 		exit_code=$? \
-		i=0 \
-		end="${#FUNCNAME[@]}" \
-		next
-	if [ "$exit_code" != 0 ]; then
-		end=$((end - 1))
+		i=0
+	declare -a \
+		all_functions=() \
+		parts
+	if [ "$exit_code" != 0 ] && [ "${HANDLED_ERROR:-}" != 1 ]; then
 		echo "Failing with exit code ${exit_code} in command: ${cmd}" >&2
-		while [ "$i" != "$end" ]; do
-			next=$((i + 1))
-			echo "	${BASH_SOURCE["$next"]:-}:${BASH_LINENO["$i"]}:${FUNCNAME["$next"]}" >&2
-			i=$next
+		while caller "$i" >&2; do
+			i=$((i + 1))
 		done
+		HANDLED_ERROR=1
 	fi
 	declare -F | mapfile -t all_functions
 	for i in "${all_functions[@]}"; do
@@ -45,6 +41,19 @@ on_exit() {
 			"${parts[2]}"
 		fi
 	done
+	exit "$exit_code"
+}
+
+on_error() {
+	declare \
+		cmd=$BASH_COMMAND \
+		exit_code=$? \
+		i=0
+	echo "Failing with exit code ${exit_code} in command: ${cmd}" >&2
+	while caller "$i" >&2; do
+		i=$((i + 1))
+	done
+	HANDLED_ERROR=1
 	exit "$exit_code"
 }
 
@@ -1337,7 +1346,7 @@ FROM rockylinux:9
 
 ENV PATH=/usr/local/bin:/usr/local/sbin:/bin:/sbin:/usr/bin:/usr/sbin
 
-RUN dnf install -y \
+RUN dnf install -y --allowerasing \
 	bash \
 	openssh-server \
 	openssh-clients \
@@ -1421,6 +1430,7 @@ EOF
 	fi
 	echo
 	declare -f on_exit
+	declare -f on_error
 	for i in "${functions[@]}"; do
 		if [ "$i" = "set_functions_baseline" ]; then
 			continue
@@ -1434,6 +1444,7 @@ EOF
 mapfile -d "" -t output << "EOF"
 
 trap on_exit EXIT
+trap on_error ERR
 
 EOF
 	echo -n "$output"
@@ -1441,6 +1452,7 @@ EOF
 
 main() {
 	trap on_exit EXIT
+	trap on_error ERR
 	declare arg1
 	if [ "${TEST_MODULES:-0}" = 1 ]; then
 		return 0
