@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-set -eEuo pipefail
+set -euo pipefail
 shopt -s inherit_errexit nullglob lastpipe
 
 TEST_CONTAINER=""
@@ -19,18 +19,37 @@ set_functions_baseline() {
 	declare -F | mapfile -t SHARED_FUNCTIONS_BASELINE
 }
 
-on_error() {
+on_exit() {
+	declare -a \
+		all_functions=() \
+		parts
 	declare \
 		cmd=$BASH_COMMAND \
-		exit_code=$?
-	if [ "$exit_code" != 0  ] && [ "${HANDLED_ERROR:-}" != 1  ]; then
-		echo "Failing with exit code ${exit_code} at ${*} in command: ${cmd}" >&2
-		HANDLED_ERROR=1
-	fi
+		exit_code=$? \
+		i=0 \
+	end="${#FUNCNAME[@]}" \
+	next
+		if [ "$exit_code" = 0 ]; then
+			return 0
+		fi
+	end=$((end - 1))
+	echo "Failing with exit code ${exit_code} in command: ${cmd}" >&2
+	while [ "$i" != "$end" ]; do
+		next=$((i + 1))
+		echo "	${BASH_SOURCE["$next"]:-}:${BASH_LINENO["$i"]}:${FUNCNAME["$next"]}" >&2
+		i=$next
+	done
+	declare -F | mapfile -t all_functions
+	for i in "${all_functions[@]}"; do
+		if [[ $i =~ declare[[:space:]]-f[[:space:]]on_exit_[^[:space:]]+$ ]]; then
+			read -r -a parts <<< "$i"
+			"${parts[2]}"
+		fi
+	done
 	exit "$exit_code"
 }
 
-on_exit() {
+on_exit_remove_container() {
 	if [ -n "${TEST_CONTAINER:-}" ]; then
 		docker rm -f "$TEST_CONTAINER" > /dev/null || :
 	fi
@@ -46,6 +65,7 @@ share_functions() {
 }
 
 share_functions share_functions
+share_functions on_exit
 
 ###
 # Show shared variables definitions.
@@ -1401,7 +1421,7 @@ EOF
 		echo $'\n'"set_functions_baseline"
 	fi
 	echo
-	declare -f on_error
+	declare -f on_exit
 	for i in "${functions[@]}"; do
 		if [ "$i" = "set_functions_baseline" ]; then
 			continue
@@ -1414,15 +1434,13 @@ EOF
 	fi
 mapfile -d "" -t output << "EOF"
 
-trap 'on_error ${BASH_SOURCE[0]:-"stdin"}:\"${FUNCNAME[*]:-}\":${LINENO}' ERR
-trap 'on_error ${BASH_SOURCE[0]:-"stdin"}:\"${FUNCNAME[*]:-}\"' EXIT
+trap on_exit EXIT
 
 EOF
 	echo -n "$output"
 }
 
 main() {
-	trap 'on_error ${BASH_SOURCE[0]:-"stdin"}:\"${FUNCNAME[*]:-}\":${LINENO}' ERR
 	trap on_exit EXIT
 	declare arg1
 	if [ "${TEST_MODULES:-0}" = 1 ]; then
