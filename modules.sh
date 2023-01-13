@@ -19,6 +19,17 @@ set_functions_baseline() {
 	declare -F | mapfile -t SHARED_FUNCTIONS_BASELINE
 }
 
+###
+# Show shared functions definitions.
+share_functions() {
+	declare i
+	for i in "$@"; do
+		SHARED_FUNCTIONS+=("$i")
+	done
+}
+
+share_functions share_functions
+
 on_exit() {
 	declare \
 		cmd=$BASH_COMMAND \
@@ -44,6 +55,8 @@ on_exit() {
 	exit "$exit_code"
 }
 
+share_functions on_exit
+
 on_error() {
 	declare \
 		cmd=$BASH_COMMAND \
@@ -57,23 +70,13 @@ on_error() {
 	exit "$exit_code"
 }
 
+share_functions on_error
+
 on_exit_remove_container() {
 	if [ -n "${TEST_CONTAINER:-}" ]; then
 		docker rm -f "$TEST_CONTAINER" > /dev/null || :
 	fi
 }
-
-###
-# Show shared functions definitions.
-share_functions() {
-	declare i
-	for i in "$@"; do
-		SHARED_FUNCTIONS+=("$i")
-	done
-}
-
-share_functions share_functions
-share_functions on_exit
 
 ###
 # Show shared variables definitions.
@@ -1429,8 +1432,6 @@ EOF
 		echo $'\n'"set_functions_baseline"
 	fi
 	echo
-	declare -f on_exit
-	declare -f on_error
 	for i in "${functions[@]}"; do
 		if [ "$i" = "set_functions_baseline" ]; then
 			continue
