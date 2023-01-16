@@ -244,22 +244,18 @@ share_functions check_do
 ###
 # Ensure, that symlink exists and points to destination.
 module_symlink() {
-	eval "$(get_options "src dest resolve" "$@")"
+	eval "$(get_options "src dest" "$@")"
 	: \
 		"${OPT_SRC:?}" \
-		"${OPT_DEST:?}" \
-		"${OPT_RESOLVE:=0}"
-	declare src
-	if [ -e "$OPT_DEST" ] && [ ! -L "$OPT_DEST" ]; then
+		"${OPT_DEST:?}"
+	declare src=""
+	if [ -L "$OPT_DEST" ]; then
+		src=$(readlink "$OPT_DEST")
+	elif [ -e "$OPT_DEST" ]; then
 		echo "Destination exists and is not a symbolic link" >&2
 		return 1
 	fi
-	if [ "$OPT_RESOLVE" = 1 ]; then
-		src=$(readlink -f "$OPT_DEST")
-	else
-		src=$OPT_DEST
-	fi
-	if [ ! -e "$OPT_DEST" ] || [ "$src" != "$OPT_SRC" ]; then
+	if [ "$src" != "$OPT_SRC" ]; then
 		check_do "Create symbolic link from ${OPT_DEST} to ${OPT_SRC}" \
 			ln -Tsf "$OPT_SRC" "$OPT_DEST"
 	fi
@@ -1096,6 +1092,76 @@ REQUIREMENTS["module_yarn"]="
 module_apt_repository
 module_apt_packages
 "
+
+###
+# Ensure directory state.
+module_directory() {
+	eval "$(get_options "path state recursive" "$@")"
+	: \
+		"${OPT_PATH:?}" \
+		"${OPT_STATE:=1}" \
+		"${OPT_RECURSIVE:=0}"
+	declare -a cmd
+	if [ "$OPT_STATE" = 0 ]; then
+		if [ "$OPT_RECURSIVE" = 1 ]; then
+			cmd=("rm" "-r")
+		else
+			cmd=("rmdir")
+		fi
+		if [ -e "$OPT_PATH" ]; then
+			check_do "Remove directory ${OPT_PATH}" \
+				"${cmd[@]}" "$OPT_PATH"
+		fi
+	elif [ -e "$OPT_PATH" ]; then
+		if [ ! -d "$OPT_PATH" ] && [ "${CHECK_MODE:-0}" = 0 ]; then
+			echo "Path ${OPT_PATH} exists and is not a directory" >&2
+			return 1
+		fi
+	else
+		cmd=("mkdir")
+		if [ "$OPT_RECURSIVE" = 1 ]; then
+			cmd+=("-p")
+		fi
+		check_do "Create directory ${OPT_PATH}" \
+			"${cmd[@]}" "$OPT_PATH"
+	fi
+}
+
+share_functions module_directory
+
+REQUIREMENTS["module_directory"]="get_options"
+
+TEST_SUITES+=(test_directory)
+test_directory() {
+	echo -n "${FUNCNAME[0]} "
+	declare image
+	for image in debian alpine rockylinux; do
+		launch_container "$image"
+		exec_container > /dev/null <<- "EOF"
+			module_directory \
+				path /test
+			[ -d /test ]
+			module_directory \
+				path /test/l1/l2 \
+				recursive 1
+			[ -d /test/l1/l2 ]
+			CHECK_MODE=1 module_directory \
+				path /etc/hosts
+			module_directory \
+				path /test/l1/l2 \
+				state 0
+			[ ! -d /test/l1/l2 ]
+			module_directory \
+				path /test \
+				state 0 \
+				recursive 1
+			[ ! -d /test ]
+			rm -rf /test
+		EOF
+		remove_container
+	done
+	echo "ok"
+}
 
 ###
 # Ensure, that systemd service is in defined state.
