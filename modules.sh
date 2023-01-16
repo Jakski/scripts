@@ -213,13 +213,14 @@ get_options() {
 				break
 			fi
 		done
-		if [ "$is_opt_found" = 0 ]; then
-			value=""
-		fi
 		key=${key//-/_}
 		key=$(printf "%q" "OPT_${key^^}")
-		value=$(printf "%q" "$value")
-		echo "declare ${key}=${value}"
+		if [ "$is_opt_found" = 0 ]; then
+			echo "declare ${key}"
+		else
+			value=$(printf "%q" "$value")
+			echo "declare ${key}=${value}"
+		fi
 	done
 }
 
@@ -243,16 +244,19 @@ share_functions check_do
 ###
 # Ensure, that symlink exists and points to destination.
 module_symlink() {
-	eval "$(get_options "src dest" "$@")"
+	eval "$(get_options "src dest resolve" "$@")"
 	: \
 		"${OPT_SRC:?}" \
-		"${OPT_DEST:?}"
+		"${OPT_DEST:?}" \
+		"${OPT_RESOLVE:=0}"
 	declare src
 	if [ -e "$OPT_DEST" ] && [ ! -L "$OPT_DEST" ]; then
 		echo "Destination exists and is not a symbolic link" >&2
 		return 1
 	fi
-	src=$(readlink -f "$OPT_DEST")
+	if [ "$OPT_RESOLVE" = 1 ]; then
+		src=$(readlink -f "$OPT_DEST")
+	fi
 	if [ ! -e "$OPT_DEST" ] || [ "$src" != "$OPT_SRC" ]; then
 		check_do "Create symbolic link from ${OPT_DEST} to ${OPT_SRC}" \
 			ln -Tsf "$OPT_SRC" "$OPT_DEST"
@@ -305,7 +309,7 @@ module_line_in_file() {
 	: \
 		"${OPT_STATE:=1}" \
 		"${OPT_PATH:?}"
-	if [ -z "$OPT_LINE" ] && [ -z "$OPT_PATTERN" ]; then
+	if [ ! -v OPT_LINE ] && [ ! -v OPT_PATTERN ]; then
 		echo "line or pattern must be provided" >&2
 		return 1
 	fi
@@ -323,8 +327,8 @@ module_line_in_file() {
 	is_found=0
 	for src_line in "${content[@]}"; do
 		if
-			{ [ -n "$OPT_LINE" ] && [ "$src_line" = "$OPT_LINE" ]; } \
-			|| { [ -n "$OPT_PATTERN" ] && [[ $src_line =~ $OPT_PATTERN ]]; }
+			{ [ -v OPT_LINE ] && [ "$src_line" = "$OPT_LINE" ]; } \
+			|| { [ -v OPT_PATTERN ] && [[ $src_line =~ $OPT_PATTERN ]]; }
 		then
 			if [ "$OPT_STATE" = 1 ]; then
 				is_found=1
@@ -402,7 +406,7 @@ module_file_permissions() {
 		return 0
 	fi
 	mapfile -t details <<< "$(stat -c "%u"$'\n'"%g"$'\n'"%a" "$OPT_PATH")"
-	if [ -n "$OPT_OWNER" ]; then
+	if [ -v OPT_OWNER ]; then
 		if [[ ! "$OPT_OWNER" =~ ^[[:digit:]]+$ ]]; then
 			OPT_OWNER=$(id -u "$OPT_OWNER")
 		fi
@@ -411,7 +415,7 @@ module_file_permissions() {
 				chown "$OPT_OWNER" "$OPT_PATH"
 		fi
 	fi
-	if [ -n "$OPT_GROUP" ]; then
+	if [ -v OPT_GROUP ]; then
 		if [[ ! "$OPT_GROUP" =~ ^[[:digit:]]+$ ]]; then
 			OPT_GROUP=$(id -g "$OPT_GROUP")
 		fi
@@ -420,7 +424,7 @@ module_file_permissions() {
 				chgrp "$OPT_GROUP" "$OPT_PATH"
 		fi
 	fi
-	if [ -n "$OPT_MODE" ] && [ "$OPT_MODE" != "${details[2]}" ]; then
+	if [ -v OPT_MODE ] && [ "$OPT_MODE" != "${details[2]}" ]; then
 		check_do "Set ${OPT_PATH} mode to ${OPT_MODE}" \
 			chmod "$OPT_MODE" "$OPT_PATH"
 	fi
@@ -620,12 +624,12 @@ module_apt_repository() {
 		keyring_file \
 		content
 	repository_file="/etc/apt/sources.list.d/${OPT_NAME}.sources"
-	if [ -n "$OPT_KEYRING_PREFIX" ]; then
+	if [ -v OPT_KEYRING_PREFIX ]; then
 		keyring_file="/usr/share/keyrings/${OPT_KEYRING_PREFIX}-archive-keyring.gpg"
 	else
 		keyring_file="/usr/share/keyrings/${OPT_NAME}-archive-keyring.gpg"
 	fi
-	if [ -z "$OPT_ARCHITECTURES" ]; then
+	if [ ! -v OPT_ARCHITECTURES ]; then
 		OPT_ARCHITECTURES=$(dpkg --print-architecture)
 	fi
 	mapfile -d "" content <<- EOF
@@ -780,12 +784,12 @@ module_user() {
 	declare -a \
 		opts=() \
 		common_opts=()
-	[ -z "$OPT_UID" ] || common_opts+=("--uid" "$OPT_UID")
-	[ -z "$OPT_GID" ] || common_opts+=("--gid" "$OPT_GID")
-	[ -z "$OPT_COMMENT" ] || common_opts+=("--comment" "$OPT_COMMENT")
+	[ ! -v OPT_UID ] || common_opts+=("--uid" "$OPT_UID")
+	[ ! -v OPT_GID ] || common_opts+=("--gid" "$OPT_GID")
+	[ ! -v OPT_COMMENT ] || common_opts+=("--comment" "$OPT_COMMENT")
 	# Use short flag to avoid useradd and usermod discrepancy.
-	[ -z "$OPT_HOME" ] || common_opts+=("-d" "$OPT_HOME")
-	[ -z "$OPT_SHELL" ] || common_opts+=("--shell" "$OPT_SHELL")
+	[ ! -v OPT_HOME ] || common_opts+=("-d" "$OPT_HOME")
+	[ ! -v OPT_SHELL ] || common_opts+=("--shell" "$OPT_SHELL")
 	i=$(getent passwd "$OPT_NAME") || i=""
 	if [ -z "$i" ]; then
 		if [ "$OPT_STATE" = 0 ]; then
@@ -1101,7 +1105,7 @@ module_systemd_service() {
 		enable_cmd \
 		activated \
 		active_cmd
-	if [ -n "$OPT_ENABLED" ]; then
+	if [ -v OPT_ENABLED ]; then
 		enabled=1
 		systemctl is-enabled "$OPT_NAME" &> /dev/null || enabled=0
 		if [ "$OPT_ENABLED" = 1 ]; then
@@ -1114,7 +1118,7 @@ module_systemd_service() {
 				systemctl "$enable_cmd" "$OPT_NAME"
 		fi
 	fi
-	if [ -n "$OPT_ACTIVE" ]; then
+	if [ -v OPT_ACTIVE ]; then
 		activated=1
 		systemctl is-active "$OPT_NAME" &> /dev/null || activated=0
 		if [ "$OPT_ACTIVE" = 1 ]; then
