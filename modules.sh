@@ -256,6 +256,8 @@ module_symlink() {
 	fi
 	if [ "$OPT_RESOLVE" = 1 ]; then
 		src=$(readlink -f "$OPT_DEST")
+	else
+		src=$OPT_DEST
 	fi
 	if [ ! -e "$OPT_DEST" ] || [ "$src" != "$OPT_SRC" ]; then
 		check_do "Create symbolic link from ${OPT_DEST} to ${OPT_SRC}" \
