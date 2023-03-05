@@ -34,15 +34,19 @@ on_exit() {
 	declare \
 		cmd=$BASH_COMMAND \
 		exit_code=$? \
-		i=0
+		i=0 \
+		line=""
 	declare -a \
 		all_functions=() \
 		parts
 	if [ "$exit_code" != 0 ] && [ "${HANDLED_ERROR:-}" != 1 ]; then
-		echo "Failing with exit code ${exit_code} in command: ${cmd}" >&2
-		while caller "$i" >&2; do
+		echo "Process ${BASHPID} exited with code ${exit_code} in command: ${cmd}" 1>&2
+		while true; do
+			line=$(caller "$i") || break
+			echo "  ${line}" 1>&2
 			i=$((i + 1))
 		done
+		HANDLED_ERROR=1
 		HANDLED_ERROR=1
 	fi
 	declare -F | mapfile -t all_functions
@@ -61,11 +65,15 @@ on_error() {
 	declare \
 		cmd=$BASH_COMMAND \
 		exit_code=$? \
-		i=0
-	echo "Failing with exit code ${exit_code} in command: ${cmd}" >&2
-	while caller "$i" >&2; do
+		i=0 \
+		line=""
+	echo "Process ${BASHPID} exited with code ${exit_code} in command: ${cmd}" 1>&2
+	while true; do
+		line=$(caller "$i") || break
+		echo "  ${line}" 1>&2
 		i=$((i + 1))
 	done
+	HANDLED_ERROR=1
 	HANDLED_ERROR=1
 	exit "$exit_code"
 }
@@ -1504,6 +1512,14 @@ EOF
 		echo $'\n'"set_functions_baseline"
 	fi
 	echo
+	if [[ ! ${functions[*]} =~ (^|[[:space:]])on_exit($|[[:space:]]) ]]; then
+		echo
+		declare -f on_exit
+	fi
+	if [[ ! ${functions[*]} =~ (^|[[:space:]])on_error($|[[:space:]]) ]]; then
+		echo
+		declare -f on_error
+	fi
 	for i in "${functions[@]}"; do
 		if [ "$i" = "set_functions_baseline" ]; then
 			continue
