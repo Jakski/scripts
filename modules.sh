@@ -147,11 +147,8 @@ EOF
 		shift
 		case "$arg1" in
 		-v|--with-variable)
-			arg1=$1
+			declare -p "$1"
 			shift
-			arg1="declare $(printf "%q" "$arg1")=$(printf "%q" "$1")"
-			shift
-			echo "$arg1"
 			;;
 		-f|--with-function)
 			functions+=("$1")
@@ -177,23 +174,28 @@ EOF
 			;;
 		esac
 	done
+	if [[ ${args[0]:-} =~ ^[a-zA-Z] ]] && declare -f "${args[0]}" >/dev/null; then
+		functions+=("${args[0]}")
+	fi
 	export_functions "${functions[@]}"
 	echo "trap on_error ERR"
 	echo "trap on_exit EXIT"
+	echo "declare CHECK_MODE=${CHECK_MODE:-0}"
 	printf "%q " "${args[@]}"
 }
+
+share_functions export_command
+
+REQUIREMENTS["export_command"]="
+export_functions
+"
 
 ###
 # Pipe script into shell started as a different user.
 become() {
-	declare -a args=()
 	declare user=$1
 	shift
-	if declare -f "$1" >/dev/null; then
-		args=(--with-function "$1")
-	fi
-	args=("${args[@]}" -- "$@")
-	export_command "${args[@]}" | sudo -u "$user" /bin/bash -
+	export_command "$@" | sudo -u "$user" /bin/bash -
 }
 
 share_functions become
