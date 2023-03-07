@@ -9,8 +9,8 @@ SCRIPT_FILE=$(readlink -f "$0")
 declare -a \
 	TEST_SUITES=() \
 	SHARED_FUNCTIONS_BASELINE=() \
-	SHARED_FUNCTIONS=(set_functions_baseline) \
-	SHARED_VARIABLES=(SHARED_FUNCTIONS SHARED_VARIABLES)
+	SHARED_FUNCTIONS=() \
+	SHARED_VARIABLES=()
 declare -A REQUIREMENTS=()
 
 ###
@@ -27,8 +27,6 @@ share_functions() {
 		SHARED_FUNCTIONS+=("$i")
 	done
 }
-
-share_functions share_functions
 
 on_exit() {
 	declare \
@@ -95,8 +93,6 @@ share_variables() {
 	done
 }
 
-share_functions share_variables
-
 ###
 # Show definitions of functions defined after baseline and clear baseline.
 share_functions_diff() {
@@ -122,58 +118,88 @@ share_functions_diff() {
 	SHARED_FUNCTIONS_BASELINE=()
 }
 
-share_functions share_functions_diff
-
 REQUIREMENTS["share_functions_diff"]="
 set_functions_baseline
 share_functions
 "
 
 ###
-# Show execution environment as sourceable script.
-get_self() {
-	echo "set -eEuo pipefail"
-	echo "shopt -s inherit_errexit nullglob lastpipe"
-	declare i
-	for i in "${SHARED_FUNCTIONS[@]}"; do
-		declare -f "$i"
+# Export command as a standalone script with error handling.
+export_command() {
+	declare -a \
+		functions=(on_exit on_error) \
+		args=() \
+		output
+	declare \
+		in_args=0 \
+		arg1
+	mapfile -d "" output <<EOF
+#!/usr/bin/env bash
+set -eEuo pipefail
+shopt -s inherit_errexit nullglob lastpipe
+if [ ! -v REQUIREMENTS ]; then
+	declare -A REQUIREMENTS=()
+fi
+EOF
+	echo -n "$output"
+	while [ "$#" != 0 ]; do
+		arg1=$1
+		shift
+		case "$arg1" in
+		-v|--with-variable)
+			arg1=$1
+			shift
+			arg1="declare $(printf "%q" "$arg1")=$(printf "%q" "$1")"
+			shift
+			echo "$arg1"
+			;;
+		-f|--with-function)
+			functions+=("$1")
+			shift
+			;;
+		-o|--with-option)
+			arg1=${1^^}
+			shift
+			arg1="declare OPT_$(printf "%q" "$arg1")=$(printf "%q" "$1")"
+			shift
+			echo "$arg1"
+			;;
+		*)
+			if [ "$in_args" = 0 ]; then
+				if [ "$arg1" = "--" ]; then
+					in_args=1
+				else
+					args+=("$arg1")
+				fi
+			else
+				args+=("$arg1")
+			fi
+			;;
+		esac
 	done
-	for i in "${SHARED_VARIABLES[@]}"; do
-		declare -p "$i"
-	done
-	trap
+	export_functions "${functions[@]}"
+	echo "trap on_error ERR"
+	echo "trap on_exit EXIT"
+	printf "%q " "${args[@]}"
 }
 
-share_functions get_self
-
-REQUIREMENTS["get_self"]="
-set_functions_baseline
-share_variables
-share_functions
-share_functions_diff
-"
-
 ###
-# Pipe script into shell started as different user.
+# Pipe script into shell started as a different user.
 become() {
-	declare \
-		user=$1 \
-		option
-	declare -a cmd=()
+	declare -a args=()
+	declare user=$1
 	shift
-	for option in "$@"; do
-		cmd+=("$(printf "%q" "$option")")
-	done
-	{
-		get_self
-		echo "${cmd[*]}"
-	} | sudo -u "$user" /bin/bash -
+	if declare -f "$1" >/dev/null; then
+		args=(--with-function "$1")
+	fi
+	args=("${args[@]}" -- "$@")
+	export_command "${args[@]}" | sudo -u "$user" /bin/bash -
 }
 
 share_functions become
 
 REQUIREMENTS["become"]="
-get_self
+export_command
 "
 
 TEST_SUITES+=("test_become")
@@ -1468,81 +1494,42 @@ run_tests() {
 	done
 }
 
-export_modules() {
-	declare -a \
-		output \
-		functions=("$@")
+export_functions() {
+	declare -a functions=("$@")
+	declare -A exported=()
 	declare \
-		shared=0 \
-		i \
 		fn \
-		recorded
-	if [ "${#functions[@]}" = 1 ] && [ "${functions[0]}" = "all" ]; then
-		functions=("${SHARED_FUNCTIONS[@]}")
-	fi
-mapfile -d "" -t output << "EOF"
-#!/usr/bin/env bash
-
-set -eEuo pipefail
-shopt -s inherit_errexit nullglob lastpipe
-EOF
-	echo -n "$output"
-	i=0
-	while [ "$i" != "${#functions[@]}" ]; do
-		fn=${functions["$i"]}
-		fn=${REQUIREMENTS["$fn"]:-}
-		fn=${fn//$'\n'/ }
-		for fn in $fn; do
-			for recorded in "${functions[@]}"; do
-				if [ "$recorded" = "$fn" ]; then
-					break
-				fi
-			done
-			if [ "$recorded" != "$fn" ]; then
-				functions+=("$fn")
-			fi
-		done
-		i=$((i + 1))
-	done
-	if [[ ${functions[*]} =~ (^|[[:space:]])get_self($|[[:space:]]) ]]; then
-		shared=1
-		echo $'\n'"declare -a SHARED_FUNCTIONS=(set_functions_baseline)"
-		echo "declare -a SHARED_VARIABLES=(SHARED_VARIABLES SHARED_FUNCTIONS)"$'\n'
-		declare -f set_functions_baseline
-		echo $'\n'"set_functions_baseline"
-	fi
-	echo
-	if [[ ! ${functions[*]} =~ (^|[[:space:]])on_exit($|[[:space:]]) ]]; then
-		echo
-		declare -f on_exit
-	fi
-	if [[ ! ${functions[*]} =~ (^|[[:space:]])on_error($|[[:space:]]) ]]; then
-		echo
-		declare -f on_error
-	fi
-	for i in "${functions[@]}"; do
-		if [ "$i" = "set_functions_baseline" ]; then
-			continue
+		requires
+	while [ "${#functions[@]}" != 0 ]; do
+		fn=${functions[0]}
+		requires=${REQUIREMENTS["$fn"]:-}
+		requires=${requires//$'\n'/ }
+		if [ ! -v "exported[${fn}]" ]; then
+			exported["$fn"]="$requires"
 		fi
-		echo
-		declare -f "$i"
+		for fn in $requires; do
+			functions+=("$fn")
+		done
+		unset "functions[0]"
+		functions=("${functions[@]}")
 	done
-	if [ "$shared" = 1 ]; then
-		echo $'\n'"share_functions_diff"
-	fi
-mapfile -d "" -t output << "EOF"
-
-trap on_exit EXIT
-trap on_error ERR
-
-EOF
-	echo -n "$output"
+	for fn in "${!exported[@]}"; do
+		requires=${exported["$fn"]}
+		requires=${requires## }
+		requires=${requires%% }
+		echo "REQUIREMENTS[\"${fn}\"]=\"${requires}\""
+		declare -f "$fn"
+		echo
+	done
 }
 
 main() {
 	trap on_exit EXIT
 	trap on_error ERR
 	declare arg1
+	declare -a \
+		functions \
+		args
 	if [ "${TEST_MODULES:-0}" = 1 ]; then
 		return 0
 	fi
@@ -1556,9 +1543,9 @@ main() {
 	;;
 	export)
 		if command -v shfmt >/dev/null; then
-			export_modules "$@" | shfmt
+			export_command "$@" | shfmt
 		else
-			export_modules "$@"
+			export_command "$@"
 		fi
 	;;
 	*)
