@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+###############################################################################
+# Reusable Bash functions.
+# Some variables have special meaning:
+#   - REQUIREMENTS - Associative array with function dependencies.
+#   - HANDLERS - Array with queued operations.
+#   - HANDLED_ERROR - Set, if error has been already handled in some trap.
+###############################################################################
 
 set -eEuo pipefail
 shopt -s inherit_errexit nullglob lastpipe
@@ -6,27 +13,8 @@ shopt -s inherit_errexit nullglob lastpipe
 TEST_CONTAINER=""
 #shellcheck disable=SC2034
 SCRIPT_FILE=$(readlink -f "$0")
-declare -a \
-	TEST_SUITES=() \
-	SHARED_FUNCTIONS_BASELINE=() \
-	SHARED_FUNCTIONS=() \
-	SHARED_VARIABLES=()
+declare -a TEST_SUITES=()
 declare -A REQUIREMENTS=()
-
-###
-# Save defined functions to generate diff later on.
-set_functions_baseline() {
-	declare -F | mapfile -t SHARED_FUNCTIONS_BASELINE
-}
-
-###
-# Show shared functions definitions.
-share_functions() {
-	declare i
-	for i in "$@"; do
-		SHARED_FUNCTIONS+=("$i")
-	done
-}
 
 on_exit() {
 	declare \
@@ -57,8 +45,6 @@ on_exit() {
 	exit "$exit_code"
 }
 
-share_functions on_exit
-
 on_error() {
 	declare \
 		cmd=$BASH_COMMAND \
@@ -76,8 +62,6 @@ on_error() {
 	exit "$exit_code"
 }
 
-share_functions on_error
-
 on_exit_remove_container() {
 	if [ -n "${TEST_CONTAINER:-}" ]; then
 		docker rm -f "$TEST_CONTAINER" > /dev/null || :
@@ -85,46 +69,8 @@ on_exit_remove_container() {
 }
 
 ###
-# Show shared variables definitions.
-share_variables() {
-	declare i
-	for i in "$@"; do
-		SHARED_VARIABLES+=("$i")
-	done
-}
-
-###
-# Show definitions of functions defined after baseline and clear baseline.
-share_functions_diff() {
-	declare \
-		new_fn \
-		old_fn \
-		is_found
-	declare -a new_functions
-	declare -F | mapfile -t new_functions
-	for new_fn in "${new_functions[@]}"; do
-		is_found=0
-		for old_fn in "${SHARED_FUNCTIONS_BASELINE[@]}"; do
-			if [ "$old_fn" = "$new_fn" ]; then
-				is_found=1
-				break
-			fi
-		done
-		if [ "$is_found" = 0 ]; then
-			new_fn=${new_fn##* }
-			share_functions "$new_fn"
-		fi
-	done
-	SHARED_FUNCTIONS_BASELINE=()
-}
-
-REQUIREMENTS["share_functions_diff"]="
-set_functions_baseline
-share_functions
-"
-
-###
 # Export command as a standalone script with error handling.
+REQUIREMENTS["export_command"]="export_functions"
 export_command() {
 	declare -a \
 		functions=(
@@ -191,25 +137,15 @@ EOF
 	printf "%q " "${args[@]}"
 }
 
-share_functions export_command
-
-REQUIREMENTS["export_command"]="
-export_functions
-"
-
 ###
 # Pipe script into shell started as a different user.
+REQUIREMENTS["become"]="export_command"
 become() {
 	declare user=$1
 	shift
 	export_command "$@" | sudo -u "$user" /bin/bash -
 }
 
-share_functions become
-
-REQUIREMENTS["become"]="
-export_command
-"
 
 TEST_SUITES+=("test_become")
 test_become() {
@@ -267,8 +203,6 @@ get_options() {
 	done
 }
 
-share_functions get_options
-
 ###
 # Skip task in check mode.
 check_do() {
@@ -282,10 +216,9 @@ check_do() {
 	fi
 }
 
-share_functions check_do
-
 ###
 # Ensure, that symlink exists and points to destination.
+REQUIREMENTS["module_symlink"]="get_options check_do"
 module_symlink() {
 	eval "$(get_options "src dest" "$@")"
 	: \
@@ -303,13 +236,6 @@ module_symlink() {
 			ln -Tsf "$OPT_SRC" "$OPT_DEST"
 	fi
 }
-
-share_functions module_symlink
-
-REQUIREMENTS["module_symlink"]="
-get_options
-check_do
-"
 
 TEST_SUITES+=(test_symlink)
 test_symlink() {
@@ -345,6 +271,7 @@ test_symlink() {
 
 ###
 # Ensure, that line exists in file. Add it to the end, if missing.
+REQUIREMENTS["module_line_in_file"]="get_options module_file_content"
 module_line_in_file() {
 	eval "$(get_options "path line state pattern" "$@")"
 	: \
@@ -387,13 +314,6 @@ module_line_in_file() {
 		path "$OPT_PATH" \
 		content "$merged_content"$'\n'
 }
-
-share_functions module_line_in_file
-
-REQUIREMENTS["module_line_in_file"]="
-get_options
-module_file_content
-"
 
 TEST_SUITES+=(test_line_in_file)
 test_line_in_file() {
@@ -439,6 +359,7 @@ test_line_in_file() {
 
 ###
 # Ensure, that file has mode, group or owner.
+REQUIREMENTS["module_file_permissions"]="get_options check_do"
 module_file_permissions() {
 	eval "$(get_options "mode owner group path" "$@")"
 	: "${OPT_PATH:?}"
@@ -471,13 +392,6 @@ module_file_permissions() {
 	fi
 }
 
-share_functions module_file_permissions
-
-REQUIREMENTS["module_file_permissions"]="
-get_options
-check_do
-"
-
 TEST_SUITES+=(test_file_permissions)
 test_file_permissions() {
 	echo -n "${FUNCNAME[0]} "
@@ -502,6 +416,7 @@ test_file_permissions() {
 
 ###
 # Ensure, that file has content.
+REQUIREMENTS["module_file_content"]="get_options check_do"
 module_file_content() {
 	eval "$(get_options "path content" "$@")"
 	: \
@@ -533,13 +448,6 @@ module_file_content() {
 	fi
 }
 
-share_functions module_file_content
-
-REQUIREMENTS["module_file_content"]="
-get_options
-check_do
-"
-
 TEST_SUITES+=(test_file_content)
 test_file_content() {
 	echo -n "${FUNCNAME[0]} "
@@ -565,6 +473,7 @@ test_file_content() {
 
 ###
 # Ensure, that APT package is installed.
+REQUIREMENTS["module_apt_packages"]="get_options"
 module_apt_packages() {
 	eval "$(get_options "names state" "$@")"
 	: \
@@ -616,10 +525,6 @@ module_apt_packages() {
 	fi
 }
 
-share_functions module_apt_packages
-
-REQUIREMENTS["module_apt_packages"]="get_options"
-
 TEST_SUITES+=(test_apt_packages)
 test_apt_packages() {
 	echo -n "${FUNCNAME[0]} "
@@ -640,6 +545,7 @@ test_apt_packages() {
 
 ###
 # Ensure, that APT repository exists.
+REQUIREMENTS["module_apt_repository"]="get_options check_do module_file_content module_file_permissions"
 module_apt_repository() {
 	eval "$(get_options "\
 		name \
@@ -703,15 +609,6 @@ module_apt_repository() {
 	fi
 }
 
-share_functions module_apt_repository
-
-REQUIREMENTS["module_apt_repository"]="
-get_options
-check_do
-module_file_content
-module_file_permissions
-"
-
 TEST_SUITES+=(test_apt_repository)
 test_apt_repository() {
 	echo -n "${FUNCNAME[0]} "
@@ -735,6 +632,7 @@ test_apt_repository() {
 
 ###
 # Mark APT packages as held.
+REQUIREMENTS["module_apt_hold"]="get_options check_do"
 module_apt_hold() {
 	eval "$(get_options "names state" "$@")"
 	: \
@@ -774,13 +672,6 @@ module_apt_hold() {
 	fi
 }
 
-share_functions module_apt_hold
-
-REQUIREMENTS["module_apt_hold"]="
-get_options
-check_do
-"
-
 TEST_SUITES+=(test_apt_hold)
 test_apt_hold() {
 	echo -n "${FUNCNAME[0]} "
@@ -805,6 +696,7 @@ test_apt_hold() {
 
 ###
 # Ensure user's state.
+REQUIREMENTS["module_user"]="get_options check_do"
 module_user() {
 	eval "$(get_options "name uid gid comment create_home home shell force remove move_home state" "$@")"
 	: \
@@ -862,13 +754,6 @@ module_user() {
 	fi
 }
 
-share_functions module_user
-
-REQUIREMENTS["module_user"]="
-get_options
-check_do
-"
-
 TEST_SUITES+=(test_user)
 test_user() {
 	echo -n "${FUNCNAME[0]} "
@@ -909,6 +794,7 @@ test_user() {
 
 ###
 # Setup NodeJS.
+REQUIREMENTS["module_nodejs"]="get_options module_apt_repository module_apt_packages"
 module_nodejs() {
 	eval "$(get_options "version" "$@")"
 	: "${OPT_VERSION:?}"
@@ -927,16 +813,9 @@ module_nodejs() {
 	module_apt_packages names nodejs
 }
 
-share_functions module_nodejs
-
-REQUIREMENTS["module_nodejs"]="
-get_options
-module_apt_repository
-module_apt_packages
-"
-
 ###
 # Setup Varnish
+REQUIREMENTS["module_varnish"]="get_options module_apt_repository module_apt_packages"
 module_varnish() {
 	eval "$(get_options "version" "$@")"
 	: "${OPT_VERSION:="60lts"}"
@@ -955,16 +834,9 @@ module_varnish() {
 	module_apt_packages names varnish
 }
 
-share_functions module_varnish
-
-REQUIREMENTS["module_varnish"]="
-get_options
-module_apt_repository
-module_apt_packages
-"
-
 ###
 # Setup PostgreSQL repository without installing anything.
+REQUIREMENTS["module_postgresql"]="get_options module_apt_repository"
 module_postgresql() {
 	declare codename
 	{
@@ -980,15 +852,9 @@ module_postgresql() {
 		components main
 }
 
-share_functions module_postgresql
-
-REQUIREMENTS["module_postgresql"]="
-get_options
-module_apt_repository
-"
-
 ###
 # Setup Elasticsearch.
+REQUIREMENTS["module_elasticsearch"]="get_options module_apt_repository module_apt_packages"
 module_elasticsearch() {
 	eval "$(get_options "version" "$@")"
 	: "${OPT_VERSION:?}"
@@ -1002,16 +868,9 @@ module_elasticsearch() {
 	module_apt_packages names elasticsearch
 }
 
-share_functions module_elasticsearch
-
-REQUIREMENTS["module_elasticsearch"]="
-get_options
-module_apt_repository
-module_apt_packages
-"
-
 ###
 # Setup MySQL.
+REQUIREMENTS["module_mysql"]="get_options module_apt_repository module_apt_packages"
 module_mysql() {
 	eval "$(get_options "version" "$@")"
 	: "${OPT_VERSION:="8.0"}"
@@ -1041,16 +900,9 @@ module_mysql() {
 	module_apt_packages names mysql-community-server
 }
 
-share_functions module_mysql
-
-REQUIREMENTS["module_mysql"]="
-get_options
-module_apt_repository
-module_apt_packages
-"
-
 ###
 # Setup PHP from Sury.
+REQUIREMENTS["module_php_sury"]="get_options module_apt_repository module_apt_packages"
 module_php_sury() {
 	eval "$(get_options "version extensions" "$@")"
 	: "${OPT_VERSION:="8.1"}"
@@ -1108,16 +960,9 @@ module_php_sury() {
 		names "${packages[*]}"
 }
 
-share_functions module_php_sury
-
-REQUIREMENTS["module_php_sury"]="
-get_options
-module_apt_repository
-module_apt_packages
-"
-
 ###
 # Setup Yarn.
+REQUIREMENTS["module_yarn"]="module_apt_repository module_apt_packages"
 module_yarn() {
 	module_apt_repository \
 		name yarn \
@@ -1129,15 +974,9 @@ module_yarn() {
 	module_apt_packages names yarn
 }
 
-share_functions module_yarn
-
-REQUIREMENTS["module_yarn"]="
-module_apt_repository
-module_apt_packages
-"
-
 ###
 # Ensure directory state.
+REQUIREMENTS["module_directory"]="get_options"
 module_directory() {
 	eval "$(get_options "path state recursive" "$@")"
 	: \
@@ -1169,10 +1008,6 @@ module_directory() {
 			"${cmd[@]}" "$OPT_PATH"
 	fi
 }
-
-share_functions module_directory
-
-REQUIREMENTS["module_directory"]="get_options"
 
 TEST_SUITES+=(test_directory)
 test_directory() {
@@ -1208,6 +1043,7 @@ test_directory() {
 
 ###
 # Ensure, that systemd service is in defined state.
+REQUIREMENTS["module_systemd_service"]="get_options"
 module_systemd_service() {
 	eval "$(get_options "name active enabled" "$@")"
 	: "${OPT_NAME:?}"
@@ -1243,10 +1079,6 @@ module_systemd_service() {
 		fi
 	fi
 }
-
-share_functions module_systemd_service
-
-REQUIREMENTS["module_systemd_service"]="get_options"
 
 TEST_SUITES+=(test_systemd_service)
 test_systemd_service() {
@@ -1311,8 +1143,6 @@ add_handler() {
 	HANDLERS+=("$cmd")
 }
 
-share_functions add_handler
-
 ###
 # Run recorder tasks.
 flush_handlers() {
@@ -1322,8 +1152,6 @@ flush_handlers() {
 	done
 	HANDLERS=()
 }
-
-share_functions flush_handlers
 
 TEST_SUITES+=(test_handlers)
 test_handlers() {
@@ -1361,8 +1189,6 @@ verify_checksum() {
 	fi
 	echo "$input" | base64 -d
 }
-
-share_functions verify_checksum
 
 TEST_SUITES+=(test_verify_checksum)
 test_verify_checksum() {
