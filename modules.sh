@@ -127,7 +127,14 @@ share_functions
 # Export command as a standalone script with error handling.
 export_command() {
 	declare -a \
-		functions=(on_exit on_error) \
+		functions=(
+			on_exit
+			on_error
+			add_handler
+			flush_handlers
+			get_options
+			check_do
+		) \
 		args=() \
 		output
 	declare \
@@ -1520,7 +1527,7 @@ export_functions() {
 		requires=${requires## }
 		requires=${requires%% }
 		echo "REQUIREMENTS[\"${fn}\"]=\"${requires}\""
-		declare -f "$fn"
+		declare -pf "$fn"
 		echo
 	done
 }
