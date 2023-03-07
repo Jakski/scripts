@@ -1552,9 +1552,9 @@ main() {
 	;;
 	export)
 		if command -v shfmt >/dev/null; then
-			export_command "$@" | shfmt
+			export_command "${@:-":"}" | shfmt
 		else
-			export_command "$@"
+			export_command "${@:-":"}"
 		fi
 	;;
 	*)
