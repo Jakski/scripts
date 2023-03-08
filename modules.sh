@@ -408,7 +408,7 @@ module_file_permissions() {
 			OPT_GROUP=$(id -g "$OPT_GROUP")
 		fi
 		if [ "${details[1]}" != "$OPT_GROUP" ]; then
-			check_do "Set ${OPT_PATH} group to ${OPT_OWNER}" \
+			check_do "Set ${OPT_PATH} group to ${OPT_GROUP}" \
 				chgrp "$OPT_GROUP" "$OPT_PATH"
 		fi
 	fi
