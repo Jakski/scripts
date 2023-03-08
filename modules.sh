@@ -98,34 +98,27 @@ EOF
 	while [ "$#" != 0 ]; do
 		arg1=$1
 		shift
-		case "$arg1" in
-		-v|--with-variable)
-			declare -p "$1"
-			shift
-			;;
-		-f|--with-function)
-			functions+=("$1")
-			shift
-			;;
-		-o|--with-option)
-			arg1=${1^^}
-			shift
-			arg1="declare OPT_$(printf "%q" "$arg1")=$(printf "%q" "$1")"
-			shift
-			echo "$arg1"
-			;;
-		*)
-			if [ "$in_args" = 0 ]; then
+		if [ "$in_args" = 1 ]; then
+			args+=("$arg1")
+		else
+			case "$arg1" in
+			-v|--with-variable)
+				declare -p "$1"
+				shift
+				;;
+			-f|--with-function)
+				functions+=("$1")
+				shift
+				;;
+			*)
 				if [ "$arg1" = "--" ]; then
 					in_args=1
 				else
 					args+=("$arg1")
 				fi
-			else
-				args+=("$arg1")
-			fi
-			;;
-		esac
+				;;
+			esac
+		fi
 	done
 	if [[ ${args[0]:-} =~ ^[a-zA-Z] ]] && declare -f "${args[0]}" >/dev/null; then
 		functions+=("${args[0]}")
@@ -135,6 +128,39 @@ EOF
 	echo "trap on_exit EXIT"
 	echo "declare CHECK_MODE=${CHECK_MODE:-0}"
 	printf "%q " "${args[@]}"
+}
+
+TEST_SUITES+=("test_export_command")
+test_export_command() {
+	echo -n "${FUNCNAME[0]} "
+	declare image
+	for image in debian alpine rockylinux; do
+		launch_container "$image"
+		exec_container > /dev/null <<- "EOF"
+			REQUIREMENTS["fn1"]="fn2"
+			fn1() {
+				echo "$*"
+				fn2
+				fn3
+			}
+			fn2() {
+				echo "$VAR"
+			}
+			fn3() {
+				echo "fn3"
+			}
+			declare VAR=qwerty
+			declare -a lines
+			export_command -v VAR -f fn3 fn1 qwe rty \
+				| source /dev/stdin \
+				| mapfile -t lines
+			[ "${lines[0]}" = "qwe rty" ]
+			[ "${lines[1]}" = "qwerty" ]
+			[ "${lines[2]}" = "fn3" ]
+		EOF
+		remove_container
+	done
+	echo "ok"
 }
 
 ###
@@ -1210,6 +1236,100 @@ test_verify_checksum() {
 	echo "ok"
 }
 
+file_to_function() {
+	declare \
+		arg1 \
+		filename \
+		name \
+		password \
+		content
+	while [ "$#" != 0 ]; do
+		arg1=$1
+		shift
+		case "$arg1" in
+		-f|--file)
+			filename=$1
+			shift
+			;;
+		-n|--name)
+			name=$1
+			shift
+			;;
+		-p|--password)
+			password=$1
+			shift
+			;;
+		*)
+			echo "Wrong option: ${arg1}" >&2
+			return 1
+			;;
+		esac
+	done
+	if [ ! -v filename ]; then
+		echo "Filename must be provided" >&2
+		return 1
+	fi
+	if [ ! -v name ]; then
+		name=$(basename "$filename")
+		name=${name//-/_}
+		name=${name//./_}
+		name=${name//\(/_}
+		name=${name//)/_}
+		name="render_${name}"
+	fi
+	if [ ! -v password ]; then
+		content=$(base64 -w 0 "$filename")
+	else
+		content=$(
+			gpg \
+				--batch \
+				--quiet \
+				--decrypt \
+				--passphrase-file <(echo "$password") \
+				<"$filename" \
+				| base64 -w 0
+		)
+	fi
+	eval "${name}() { base64 -d <<<${content}; }"
+}
+
+TEST_SUITES+=("test_file_to_function")
+test_file_to_function() {
+	echo -n "${FUNCNAME[0]} "
+	declare image
+	for image in debian alpine rockylinux; do
+		launch_container "$image"
+		exec_container > /dev/null <<- "EOF"
+			declare checksum1 checksum2
+
+			checksum1=$(md5sum /etc/hosts | cut -d " " -f 1)
+			file_to_function -f /etc/hosts
+			checksum2=$(render_hosts | md5sum | cut -d " " -f 1)
+			[ "$checksum1" = "$checksum2" ]
+
+			checksum1=$(md5sum /bin/sh | cut -d " " -f 1)
+			file_to_function -n render_binary -f /bin/sh
+			checksum2=$(render_binary | md5sum | cut -d " " -f 1)
+			[ "$checksum1" = "$checksum2" ]
+
+			checksum1=$(md5sum /etc/resolv.conf | cut -d " " -f 1)
+			rm -f /etc/resolv.conf.gpg
+			gpg \
+				--batch \
+				--quiet \
+				--symmetric \
+				--passphrase-file <(echo qwerty) \
+				</etc/resolv.conf \
+				>/etc/resolv.conf.gpg
+			file_to_function -p qwerty -f /etc/resolv.conf.gpg
+			checksum2=$(render_resolv_conf_gpg | md5sum | cut -d " " -f 1)
+			[ "$checksum1" = "$checksum2" ]
+		EOF
+		remove_container
+	done
+	echo "ok"
+}
+
 launch_container() {
 	declare image="modules:${1}"
 	TEST_CONTAINER="modules-test-${RANDOM}"
@@ -1244,6 +1364,7 @@ RUN apt-get update && apt-get install -y \
 	apt-utils \
 	wget \
 	gpg \
+	gpg-agent \
 	bash \
 	openssh-server \
 	openssh-client \
@@ -1269,6 +1390,8 @@ ENV PATH=/usr/local/bin:/usr/local/sbin:/bin:/sbin:/usr/bin:/usr/sbin
 
 RUN apk add \
 	bash \
+	gpg \
+	gpg-agent \
 	openssh-server \
 	openssh-client \
 	jq \
@@ -1292,6 +1415,7 @@ ENV PATH=/usr/local/bin:/usr/local/sbin:/bin:/sbin:/usr/bin:/usr/sbin
 
 RUN dnf install -y --allowerasing \
 	bash \
+	gpg \
 	openssh-server \
 	openssh-clients \
 	jq \
