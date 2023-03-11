@@ -5,5 +5,6 @@
 # SC1090: Can't follow non-constant source.
 # SC2066: Since you double quoted this, it will not word split, and the loop will only run once.
 # SC1091: Not following: /dev/stdin was not specified as input
-disable=SC2128,SC1090,SC2178,SC2030,SC2031,SC2066,SC1091
+# SC2153: Possible misspelling
+disable=SC2128,SC1090,SC2178,SC2030,SC2031,SC2066,SC1091,SC2153
 shell=bash

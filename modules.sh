@@ -11,7 +11,7 @@ set -eEuo pipefail
 shopt -s inherit_errexit nullglob lastpipe
 
 TEST_CONTAINER=""
-#shellcheck disable=SC2034
+#shellcheck disable=SC2035
 SCRIPT_FILE=$(readlink -f "$0")
 declare -a TEST_SUITES=()
 declare -A REQUIREMENTS=()
@@ -247,9 +247,6 @@ check_do() {
 REQUIREMENTS["module_symlink"]="get_options check_do"
 module_symlink() {
 	eval "$(get_options "src dest" "$@")"
-	: \
-		"${OPT_SRC:?}" \
-		"${OPT_DEST:?}"
 	declare src=""
 	if [ -L "$OPT_DEST" ]; then
 		src=$(readlink "$OPT_DEST")
@@ -300,9 +297,7 @@ test_symlink() {
 REQUIREMENTS["module_line_in_file"]="get_options module_file_content"
 module_line_in_file() {
 	eval "$(get_options "path line state pattern" "$@")"
-	: \
-		"${OPT_STATE:=1}" \
-		"${OPT_PATH:?}"
+	[ -v OPT_STATE ] || OPT_STATE=1
 	if [ ! -v OPT_LINE ] && [ ! -v OPT_PATTERN ]; then
 		echo "line or pattern must be provided" >&2
 		return 1
@@ -388,7 +383,6 @@ test_line_in_file() {
 REQUIREMENTS["module_file_permissions"]="get_options check_do"
 module_file_permissions() {
 	eval "$(get_options "mode owner group path" "$@")"
-	: "${OPT_PATH:?}"
 	declare -a details
 	if [ ! -e "$OPT_PATH" ] && [ "${CHECK_MODE:-0}" = 1 ]; then
 		return 0
@@ -445,9 +439,6 @@ test_file_permissions() {
 REQUIREMENTS["module_file_content"]="get_options check_do"
 module_file_content() {
 	eval "$(get_options "path content" "$@")"
-	: \
-		"${OPT_PATH:?}" \
-		"${OPT_CONTENT:?}"
 	declare \
 		delta="" \
 		old_umask
@@ -481,6 +472,7 @@ test_file_content() {
 	for image in debian alpine rockylinux; do
 		launch_container "$image"
 		exec_container > /dev/null <<- "EOF"
+			rm -f /test.txt
 			module_file_content \
 				path /test.txt \
 				content "test"
@@ -491,6 +483,10 @@ test_file_content() {
 				path /test.txt \
 				content "$content"
 			[ "$(cat /test.txt)" = "$content" ]
+			module_file_content \
+				path /test.txt \
+				content ""
+			[ "$(cat /test.txt)" = "" ]
 		EOF
 		remove_container
 	done
@@ -502,9 +498,7 @@ test_file_content() {
 REQUIREMENTS["module_apt_packages"]="get_options"
 module_apt_packages() {
 	eval "$(get_options "names state" "$@")"
-	: \
-		"${OPT_NAMES:?}" \
-		"${OPT_STATE:=1}"
+	[ -v OPT_STATE ] || OPT_STATE=1
 	declare -a \
 		pending=() \
 		packages=() \
@@ -585,12 +579,6 @@ module_apt_repository() {
 		types \
 		update \
 	" "$@")"
-	: \
-		"${OPT_NAME:?}" \
-		"${OPT_URL:?}" \
-		"${OPT_SUITES:?}" \
-		"${OPT_COMPONENTS:?}" \
-		"${OPT_KEYRING_URL:?}"
 	declare \
 		delta="" \
 		repository_file \
@@ -661,9 +649,7 @@ test_apt_repository() {
 REQUIREMENTS["module_apt_hold"]="get_options check_do"
 module_apt_hold() {
 	eval "$(get_options "names state" "$@")"
-	: \
-		"${OPT_NAMES:?}" \
-		"${OPT_STATE:=1}"
+	[ -v OPT_STATE ] || OPT_STATE=1
 	declare -a \
 		pending=() \
 		present=() \
@@ -725,13 +711,11 @@ test_apt_hold() {
 REQUIREMENTS["module_user"]="get_options check_do"
 module_user() {
 	eval "$(get_options "name uid gid comment create_home home shell force remove move_home state" "$@")"
-	: \
-		"${OPT_NAME:?}" \
-		"${OPT_CREATE_HOME:=1}" \
-		"${OPT_FORCE:=0}" \
-		"${OPT_REMOVE:=0}" \
-		"${OPT_MOVE_HOME:=0}" \
-		"${OPT_STATE:=1}"
+	[ -v OPT_CREATE_HOME ] || OPT_CREATE_HOME=1
+	[ -v OPT_FORCE ] || OPT_FORCE=0
+	[ -v OPT_REMOVE ] || OPT_REMOVE=0
+	[ -v OPT_MOVE_HOME ] || OPT_MOVE_HOME=0
+	[ -v OPT_STATE ] || OPT_STATE=1
 	declare \
 		name \
 		uid \
@@ -823,7 +807,7 @@ test_user() {
 REQUIREMENTS["module_nodejs"]="get_options module_apt_repository module_apt_packages"
 module_nodejs() {
 	eval "$(get_options "version" "$@")"
-	: "${OPT_VERSION:?}"
+	[ -v OPT_VERSION ] || OPT_VERSION=18
 	declare codename
 	{
 		source /etc/os-release
@@ -844,6 +828,7 @@ module_nodejs() {
 REQUIREMENTS["module_varnish"]="get_options module_apt_repository module_apt_packages"
 module_varnish() {
 	eval "$(get_options "version" "$@")"
+	[ -v OPT_VERSION ] || OPT_VERSION="60lts"
 	: "${OPT_VERSION:="60lts"}"
 	declare codename
 	{
@@ -883,7 +868,7 @@ module_postgresql() {
 REQUIREMENTS["module_elasticsearch"]="get_options module_apt_repository module_apt_packages"
 module_elasticsearch() {
 	eval "$(get_options "version" "$@")"
-	: "${OPT_VERSION:?}"
+	[ -v OPT_VERSION ] || OPT_VERSION=8
 	module_apt_repository \
 		name elasticsearch \
 		url "https://artifacts.elastic.co/packages/${OPT_VERSION}.x/apt" \
@@ -899,7 +884,7 @@ module_elasticsearch() {
 REQUIREMENTS["module_mysql"]="get_options module_apt_repository module_apt_packages"
 module_mysql() {
 	eval "$(get_options "version" "$@")"
-	: "${OPT_VERSION:="8.0"}"
+	[ -v OPT_VERSION ] || OPT_VERSION="8.0"
 	declare \
 		keyring_url="https://pgp.mit.edu/pks/lookup?op=get&search=0x467B942D3A79BD29&exact=on&options=mr" \
 		codename
@@ -931,7 +916,7 @@ module_mysql() {
 REQUIREMENTS["module_php_sury"]="get_options module_apt_repository module_apt_packages"
 module_php_sury() {
 	eval "$(get_options "version extensions" "$@")"
-	: "${OPT_VERSION:="8.1"}"
+	[ -v OPT_VERSION ] || OPT_VERSION="8.1"
 	declare \
 		i \
 		codename
@@ -1005,10 +990,8 @@ module_yarn() {
 REQUIREMENTS["module_directory"]="get_options"
 module_directory() {
 	eval "$(get_options "path state recursive" "$@")"
-	: \
-		"${OPT_PATH:?}" \
-		"${OPT_STATE:=1}" \
-		"${OPT_RECURSIVE:=0}"
+	[ -v OPT_STATE ] || OPT_STATE=1
+	[ -v OPT_RECURSIVE ] || OPT_RECURSIVE=0
 	declare -a cmd
 	if [ "$OPT_STATE" = 0 ]; then
 		if [ "$OPT_RECURSIVE" = 1 ]; then
@@ -1072,7 +1055,6 @@ test_directory() {
 REQUIREMENTS["module_systemd_service"]="get_options"
 module_systemd_service() {
 	eval "$(get_options "name active enabled" "$@")"
-	: "${OPT_NAME:?}"
 	declare \
 		enabled \
 		enable_cmd \
@@ -1196,6 +1178,129 @@ test_handlers() {
 		rm /test3.txt
 	EOF
 	remove_container
+	echo "ok"
+}
+
+###
+# Manage file.
+REQUIREMENTS["module_file"]="
+get_options
+check_do
+module_file_content
+module_file_permissions
+module_directory
+module_symlink
+"
+module_file() {
+	eval "$(get_options "path src content recursive mode owner group state" "$@")"
+	declare -a permission_options=()
+	case "$OPT_STATE" in
+	directory)
+		module_directory \
+			path "$OPT_PATH"
+		;;
+	file)
+		if [ -v OPT_CONTENT ]; then
+			module_file_content \
+				path "$OPT_PATH" \
+				content "$OPT_CONTENT"
+		elif [ ! -e "$OPT_PATH" ]; then
+			check_do "Create file ${OPT_PATH}" \
+				install -m 700 /dev/null "$OPT_PATH"
+		fi
+		;;
+	symlink)
+		module_symlink \
+			src "$OPT_SRC" \
+			dest "$OPT_PATH"
+		;;
+	absent)
+		if [ -L "$OPT_PATH" ]; then
+			check_do "Remove symlink ${OPT_PATH}" \
+				rm "$OPT_PATH"
+		elif [ -f "$OPT_PATH" ]; then
+			check_do "Remove file ${OPT_PATH}" \
+				rm "$OPT_PATH"
+		elif [ -d "$OPT_PATH" ]; then
+			module_directory \
+				path "$OPT_PATH" \
+				recursive "${OPT_RECURSIVE:-0}" \
+				state 0
+		fi
+		;;
+	*)
+		echo "Unknown file state: ${OPT_STATE}" >&2
+		return 1
+		;;
+	esac
+	if [ -v OPT_MODE ]; then
+		permission_options+=(mode "$OPT_MODE")
+	fi
+	if [ -v OPT_OWNER ]; then
+		permission_options+=(owner "$OPT_OWNER")
+	fi
+	if [ -v OPT_GROUP ]; then
+		permission_options+=(group "$OPT_GROUP")
+	fi
+	if [ "${#permission_options[@]}" != 0 ]; then
+		module_file_permissions \
+			path "$OPT_PATH" \
+			"${permission_options[@]}"
+	fi
+}
+
+TEST_SUITES+=(test_file)
+test_file() {
+	echo -n "${FUNCNAME[0]} "
+	declare image
+	for image in debian alpine rockylinux; do
+		launch_container "$image"
+		exec_container > /dev/null <<- "EOF"
+			rm -rf /test.txt /test
+			module_file \
+				path /test.txt \
+				state "file"
+			[ "$(cat /test.txt)" = "" ]
+			module_file \
+				path /test.txt \
+				content "qwe" \
+				mode 777 \
+				owner 2 \
+				group 2 \
+				state "file"
+			module_file \
+				path /test.txt \
+				state "file"
+			[ "$(stat -c "%u %g %F %a" /test.txt)" = "2 2 regular file 777" ]
+			[ "$(cat /test.txt)" = "qwe" ]
+			module_file \
+				path /test.txt \
+				state "absent"
+			[ ! -e /test.txt ]
+			module_file \
+				path /test \
+				mode 777 \
+				owner 2 \
+				group 2 \
+				state directory
+			[ "$(stat -c "%u %g %F %a" /test)" = "2 2 directory 777" ]
+			module_file \
+				path /test \
+				state absent
+			[ ! -d /test ]
+			module_file \
+				path /test.txt \
+				src /etc/hosts \
+				state symlink
+			[ -L /test.txt ]
+			[ "$(realpath /test.txt)" = /etc/hosts ]
+			module_file \
+				path /test.txt \
+				state absent
+			[ ! -L /test.txt ]
+		EOF
+		remove_container
+	done
 	echo "ok"
 }
 
