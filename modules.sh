@@ -593,14 +593,14 @@ module_apt_repository() {
 	if [ ! -v OPT_ARCHITECTURES ]; then
 		OPT_ARCHITECTURES=$(dpkg --print-architecture)
 	fi
-	mapfile -d "" content <<- EOF
-		Types: ${OPT_TYPES:-"deb"}
-		URIs: ${OPT_URL}
-		Suites: ${OPT_SUITES}
-		Architectures: ${OPT_ARCHITECTURES}
-		Components: ${OPT_COMPONENTS}
-		Signed-By: ${keyring_file}
-	EOF
+	content="Types: ${OPT_TYPES:-"deb"}"
+	content="$content"$'\n'"URIs: ${OPT_URL}"
+	content="$content"$'\n'"Suites: ${OPT_SUITES}"
+	content="$content"$'\n'"Architectures: ${OPT_ARCHITECTURES}"
+	if [ -v OPT_COMPONENTS ]; then
+		content="$content"$'\n'"Components: ${OPT_COMPONENTS}"
+	fi
+	content="$content"$'\n'"Signed-By: ${keyring_file}"
 	delta=$(module_file_content path "$repository_file" content "$content")
 	module_file_permissions \
 		path "$repository_file" \
@@ -843,6 +843,27 @@ module_varnish() {
 		suites "$codename" \
 		components "main"
 	module_apt_packages names varnish
+}
+
+###
+# Setup Netdata
+REQUIREMENTS["module_netdata"]="get_options module_apt_repository module_apt_packages"
+module_netdata() {
+	eval "$(get_options "release" "$@")"
+	[ -v OPT_RELEASE ] || OPT_RELEASE="stable"
+	declare codename
+	{
+		source /etc/os-release
+		echo "$VERSION_CODENAME"
+	} | read -r codename
+	module_apt_repository \
+		name netdata \
+		url "http://repo.netdata.cloud/repos/${OPT_RELEASE}/debian/" \
+		keyring_url "https://repo.netdata.cloud/netdatabot.gpg.key" \
+		keyring_armored 1 \
+		suites "${codename}/"
+	module_apt_packages \
+		names netdata
 }
 
 ###
