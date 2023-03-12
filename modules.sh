@@ -1072,15 +1072,37 @@ test_directory() {
 }
 
 ###
-# Ensure, that systemd service is in defined state.
-REQUIREMENTS["module_systemd_service"]="get_options"
-module_systemd_service() {
-	eval "$(get_options "name active enabled" "$@")"
+# Manage systemd unit.
+REQUIREMENTS["module_systemd_unit"]="
+get_options
+check_do
+module_file_content
+module_file_permissions
+"
+module_systemd_unit() {
+	eval "$(get_options "name active definition enabled" "$@")"
 	declare \
 		enabled \
 		enable_cmd \
 		activated \
-		active_cmd
+		active_cmd \
+		delta \
+		path
+	if [ -v OPT_DEFINITION ]; then
+		path="/etc/systemd/system/${OPT_NAME}"
+		delta=$(module_file_content \
+			path "$path" \
+			content "$OPT_DEFINITION"
+		)
+		module_file_permissions \
+			path "$path" \
+			mode "644"
+		if [ -n "$delta" ]; then
+			echo "$delta"
+			check_do "Reload systemd" \
+				systemctl daemon-reload
+		fi
+	fi
 	if [ -v OPT_ENABLED ]; then
 		enabled=1
 		systemctl is-enabled "$OPT_NAME" &> /dev/null || enabled=0
@@ -1109,8 +1131,8 @@ module_systemd_service() {
 	fi
 }
 
-TEST_SUITES+=(test_systemd_service)
-test_systemd_service() {
+TEST_SUITES+=(test_systemd_unit)
+test_systemd_unit() {
 	echo -n "${FUNCNAME[0]} "
 	launch_container "debian"
 	exec_container > /dev/null <<- "EOF"
@@ -1128,7 +1150,7 @@ test_systemd_service() {
 		}
 		ACTIVATED_RETURN=0
 		ENABLED_RETURN=0
-		module_systemd_service \
+		module_systemd_unit \
 			name "test" \
 			active 1
 		[ "${INVOCATIONS[0]}" = "is-active test" ]
@@ -1136,7 +1158,7 @@ test_systemd_service() {
 		INVOCATIONS=()
 		ACTIVATED_RETURN=0
 		ENABLED_RETURN=1
-		module_systemd_service \
+		module_systemd_unit \
 			name "test" \
 			active 0 \
 			enabled 1
