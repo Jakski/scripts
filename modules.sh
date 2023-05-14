@@ -127,7 +127,9 @@ EOF
 	echo "trap on_error ERR"
 	echo "trap on_exit EXIT"
 	echo "declare CHECK_MODE=${CHECK_MODE:-0}"
-	printf "%q " "${args[@]}"
+	if [ "${#args[@]}" != 0 ]; then
+		printf "%q " "${args[@]}"
+	fi
 }
 
 TEST_SUITES+=("test_export_command")
