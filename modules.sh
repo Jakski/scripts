@@ -1007,6 +1007,25 @@ module_yarn() {
 }
 
 ###
+# Setp Docker
+REQUIREMENTS["module_docker"]="module_apt_repository module_apt_packages"
+module_docker() {
+	declare codename
+	{
+		source /etc/os-release
+		echo "$VERSION_CODENAME"
+	} | read -r codename
+	module_apt_repository \
+		name docker \
+		url "https://download.docker.com/linux/debian" \
+		keyring_url "https://download.docker.com/linux/debian/gpg" \
+		keyring_armored 1 \
+		suites "$codename" \
+		components stable
+	module_apt_packages names "docker-ce docker-ce-cli containerd.io docker-compose-plugin"
+}
+
+###
 # Ensure directory state.
 REQUIREMENTS["module_directory"]="get_options"
 module_directory() {
