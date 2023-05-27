@@ -1675,6 +1675,9 @@ main() {
 		else
 			export_command "$@"
 		fi
+		echo -n "#"
+		printf " %q" "$@"
+		echo
 	;;
 	*)
 		echo "Unknown command: ${arg1}" >&2
