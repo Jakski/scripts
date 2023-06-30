@@ -33,7 +33,6 @@ on_exit() {
 			i=$((i + 1))
 		done
 		HANDLED_ERROR=1
-		HANDLED_ERROR=1
 	fi
 	declare -F | mapfile -t all_functions
 	for i in "${all_functions[@]}"; do
