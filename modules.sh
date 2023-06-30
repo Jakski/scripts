@@ -57,7 +57,6 @@ on_error() {
 		i=$((i + 1))
 	done
 	HANDLED_ERROR=1
-	HANDLED_ERROR=1
 	exit "$exit_code"
 }
 
