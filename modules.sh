@@ -1403,6 +1403,39 @@ test_verify_checksum() {
 	echo "ok"
 }
 
+get_exit_code() {
+	# shellcheck disable=SC2064
+	trap "$(trap -p ERR)" RETURN
+	trap ERR
+	set +e
+	(
+		set -e
+		"${@:2}"
+	)
+	eval "$1+=($(printf "%q" "$?"))"
+	set -e
+}
+
+TEST_SUITES+=(test_get_exit_code)
+test_get_exit_code() {
+	echo -n "${FUNCNAME[0]} "
+	declare image
+	for image in debian alpine rockylinux; do
+		launch_container "$image"
+		exec_container > /dev/null <<- "EOF"
+			t1() { return 1; }
+			declare -a r=()
+			get_exit_code r t1
+			t2() { return 0; }
+			get_exit_code r t2
+			[ "${r[0]}" = 1 ]
+			[ "${r[1]}" = 0 ]
+		EOF
+		remove_container
+	done
+	echo "ok"
+}
+
 file_to_function() {
 	declare \
 		arg1 \
