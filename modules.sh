@@ -298,7 +298,9 @@ REQUIREMENTS["module_line_in_file"]="get_options module_file_content"
 module_line_in_file() {
 	eval "$(get_options "path line state pattern" "$@")"
 	[ -v OPT_STATE ] || OPT_STATE=1
-	if [ ! -v OPT_LINE ] && [ ! -v OPT_PATTERN ]; then
+	if [ -v OPT_LINE ]; then
+		OPT_LINE=${OPT_LINE//$'\n'}
+	elif [ ! -v OPT_PATTERN ]; then
 		echo "line or pattern must be provided" >&2
 		return 1
 	fi
@@ -497,19 +499,23 @@ test_file_content() {
 # Ensure, that APT package is installed.
 REQUIREMENTS["module_apt_packages"]="get_options"
 module_apt_packages() {
-	eval "$(get_options "names state" "$@")"
+	eval "$(get_options "names state cache_valid_time" "$@")"
 	[ -v OPT_STATE ] || OPT_STATE=1
 	declare -a \
+		update_cmd=(check_do "Update APT cache" apt-get update) \
 		pending=() \
 		packages=() \
 		present=() \
 		options=()
 	declare \
+		lists_dir="/var/lib/apt/lists" \
 		old_debian_frontend=${DEBIAN_FRONTEND:-} \
 		is_installed \
 		package \
 		present_package \
-		action
+		action \
+		lists_timestamp \
+		delta_timestamp
 	export DEBIAN_FRONTEND=noninteractive
 	dpkg-query -f '${db:Status-Abbrev} ${Package} ${Version}\n' -W | mapfile -t present
 	read -r -a packages <<< "$OPT_NAMES"
@@ -535,6 +541,18 @@ module_apt_packages() {
 	else
 		action="remove"
 	fi
+	if [ -v OPT_CACHE_VALID_TIME ]; then
+		if [ ! -d "$lists_dir" ]; then
+			"${update_cmd[@]}"
+		else
+			lists_timestamp=$(stat -c %Y "/var/lib/apt/lists")
+			delta_timestamp=$(date +%s)
+			delta_timestamp=$((delta_timestamp - lists_timestamp))
+			if [ "$delta_timestamp" -ge "$OPT_CACHE_VALID_TIME" ]; then
+				"${update_cmd[@]}"
+			fi
+		fi
+	fi
 	if [ "${#pending[@]}" != 0 ]; then
 		apt-get "$action" "${options[@]}" "${pending[@]}"
 	fi
@@ -558,6 +576,18 @@ test_apt_packages() {
 			names "eatmydata" \
 			state 0
 		dpkg-query -s eatmydata &>/dev/null && exit 1 || :
+		declare delta
+		delta=$(module_apt_packages \
+			names "eatmydata" \
+			state 0
+		)
+		[ -z "$delta" ]
+		delta=$(module_apt_packages \
+			names "eatmydata" \
+			state 0 \
+			cache_valid_time 1
+		)
+		[ -n "$delta" ]
 	EOF
 	remove_container
 	echo "ok"
