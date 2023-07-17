@@ -88,7 +88,7 @@ export_command() {
 #!/usr/bin/env bash
 set -eEuo pipefail
 shopt -s inherit_errexit nullglob lastpipe
-if [ ! -v REQUIREMENTS ]; then
+if [[ ! -v REQUIREMENTS[@] ]]; then
 	declare -A REQUIREMENTS=()
 fi
 EOF
