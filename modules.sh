@@ -550,6 +550,7 @@ module_apt_packages() {
 			delta_timestamp=$((delta_timestamp - lists_timestamp))
 			if [ "$delta_timestamp" -ge "$OPT_CACHE_VALID_TIME" ]; then
 				"${update_cmd[@]}"
+				touch "/var/lib/apt/lists"
 			fi
 		fi
 	fi
