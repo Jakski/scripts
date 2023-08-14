@@ -26,10 +26,10 @@ on_exit() {
 		all_functions=() \
 		parts
 	if [ "$exit_code" != 0 ] && [ "${HANDLED_ERROR:-}" != 1 ]; then
-		echo "Process ${BASHPID} exited with code ${exit_code} in command: ${cmd}" 1>&2
+		printf "%s\n" "Process ${BASHPID} exited with code ${exit_code} in command: ${cmd}" 1>&2
 		while true; do
 			line=$(caller "$i") || break
-			echo "  ${line}" 1>&2
+			printf "%s\n" "  ${line}" 1>&2
 			i=$((i + 1))
 		done
 		HANDLED_ERROR=1
@@ -50,10 +50,10 @@ on_error() {
 		exit_code=$? \
 		i=0 \
 		line=""
-	echo "Process ${BASHPID} exited with code ${exit_code} in command: ${cmd}" 1>&2
+	printf "%s\n" "Process ${BASHPID} exited with code ${exit_code} in command: ${cmd}" 1>&2
 	while true; do
 		line=$(caller "$i") || break
-		echo "  ${line}" 1>&2
+		printf "%s\n" "  ${line}" 1>&2
 		i=$((i + 1))
 	done
 	HANDLED_ERROR=1
@@ -92,7 +92,7 @@ if [[ ! -v REQUIREMENTS[@] ]]; then
 	declare -A REQUIREMENTS=()
 fi
 EOF
-	echo -n "$output"
+	printf "%s" "$output"
 	while [ "$#" != 0 ]; do
 		arg1=$1
 		shift
@@ -122,9 +122,9 @@ EOF
 		functions+=("${args[0]}")
 	fi
 	export_functions "${functions[@]}"
-	echo "trap on_error ERR"
-	echo "trap on_exit EXIT"
-	echo "declare CHECK_MODE=${CHECK_MODE:-0}"
+	printf "%s\n" "trap on_error ERR"
+	printf "%s\n" "trap on_exit EXIT"
+	printf "%s\n" "declare CHECK_MODE=${CHECK_MODE:-0}"
 	if [ "${#args[@]}" != 0 ]; then
 		printf "%q " "${args[@]}"
 	fi
@@ -132,22 +132,22 @@ EOF
 
 TEST_SUITES+=("test_export_command")
 test_export_command() {
-	echo -n "${FUNCNAME[0]} "
+	printf "%s" "${FUNCNAME[0]} "
 	declare image
 	for image in debian alpine rockylinux; do
 		launch_container "$image"
 		exec_container > /dev/null <<- "EOF"
 			REQUIREMENTS["fn1"]="fn2"
 			fn1() {
-				echo "$*"
+				printf "%s\n" "$*"
 				fn2
 				fn3
 			}
 			fn2() {
-				echo "$VAR"
+				printf "%s\n" "$VAR"
 			}
 			fn3() {
-				echo "fn3"
+				printf "%s\n" "fn3"
 			}
 			declare VAR=qwerty
 			declare -a lines
@@ -160,7 +160,7 @@ test_export_command() {
 		EOF
 		remove_container
 	done
-	echo "ok"
+	printf "%s\n" "ok"
 }
 
 ###
@@ -175,7 +175,7 @@ become() {
 
 TEST_SUITES+=("test_become")
 test_become() {
-	echo -n "${FUNCNAME[0]} "
+	printf "%s" "${FUNCNAME[0]} "
 	declare image
 	for image in debian alpine rockylinux; do
 		launch_container "$image"
@@ -190,7 +190,7 @@ test_become() {
 		EOF
 		remove_container
 	done
-	echo "ok"
+	printf "%s\n" "ok"
 }
 
 ###
@@ -221,10 +221,10 @@ get_options() {
 		key=${key//-/_}
 		key=$(printf "%q" "OPT_${key^^}")
 		if [ "$is_opt_found" = 0 ]; then
-			echo "declare ${key}"
+			printf "%s\n" "declare ${key}"
 		else
 			value=$(printf "%q" "$value")
-			echo "declare ${key}=${value}"
+			printf "%s\n" "declare ${key}=${value}"
 		fi
 	done
 }
@@ -235,7 +235,7 @@ check_do() {
 	declare comment=$1
 	shift
 	if [ -n "$comment" ]; then
-		echo "$comment"
+		printf "%s\n" "$comment"
 	fi
 	if [ "${CHECK_MODE:-0}" = 0 ]; then
 		"$@"
@@ -251,7 +251,7 @@ module_symlink() {
 	if [ -L "$OPT_DEST" ]; then
 		src=$(readlink "$OPT_DEST")
 	elif [ -e "$OPT_DEST" ]; then
-		echo "Destination exists and is not a symbolic link" >&2
+		printf "%s\n" "Destination exists and is not a symbolic link" >&2
 		return 1
 	fi
 	if [ "$src" != "$OPT_SRC" ]; then
@@ -262,7 +262,7 @@ module_symlink() {
 
 TEST_SUITES+=(test_symlink)
 test_symlink() {
-	echo -n "${FUNCNAME[0]} "
+	printf "%s" "${FUNCNAME[0]} "
 	declare image
 	for image in debian alpine rockylinux; do
 		launch_container "$image"
@@ -289,7 +289,7 @@ test_symlink() {
 		EOF
 		remove_container
 	done
-	echo "ok"
+	printf "%s\n" "ok"
 }
 
 ###
@@ -301,7 +301,7 @@ module_line_in_file() {
 	if [ -v OPT_LINE ]; then
 		OPT_LINE=${OPT_LINE//$'\n'}
 	elif [ ! -v OPT_PATTERN ]; then
-		echo "line or pattern must be provided" >&2
+		printf "%s\n" "line or pattern must be provided" >&2
 		return 1
 	fi
 	declare \
@@ -340,14 +340,14 @@ module_line_in_file() {
 
 TEST_SUITES+=(test_line_in_file)
 test_line_in_file() {
-	echo -n "${FUNCNAME[0]} "
+	printf "%s" "${FUNCNAME[0]} "
 	declare image
 	for image in debian alpine rockylinux; do
 		launch_container "$image"
 		exec_container > /dev/null <<- "EOF"
-			echo "line 1" > /test.txt
-			echo "line 2" >> /test.txt
-			echo "line 3" >> /test.txt
+			printf "%s\n" "line 1" > /test.txt
+			printf "%s\n" "line 2" >> /test.txt
+			printf "%s\n" "line 3" >> /test.txt
 			module_line_in_file \
 				path /test.txt \
 				line "line 1"
@@ -365,7 +365,7 @@ test_line_in_file() {
 				pattern "^line" \
 				state 0
 			[ "$(wc -l < /test.txt)" = 1 ]
-			echo "line 5" >> /test.txt
+			printf "%s\n" "line 5" >> /test.txt
 			module_line_in_file \
 				path /test.txt \
 				line "another line 6" \
@@ -377,7 +377,7 @@ test_line_in_file() {
 		EOF
 		remove_container
 	done
-	echo "ok"
+	printf "%s\n" "ok"
 }
 
 ###
@@ -416,7 +416,7 @@ module_file_permissions() {
 
 TEST_SUITES+=(test_file_permissions)
 test_file_permissions() {
-	echo -n "${FUNCNAME[0]} "
+	printf "%s" "${FUNCNAME[0]} "
 	declare image
 	for image in debian alpine rockylinux; do
 		launch_container "$image"
@@ -433,7 +433,7 @@ test_file_permissions() {
 		EOF
 		remove_container
 	done
-	echo "ok"
+	printf "%s\n" "ok"
 }
 
 ###
@@ -454,22 +454,22 @@ module_file_content() {
 			return 0
 		fi
 	fi
-	delta=$(diff <(echo -n "$OPT_CONTENT") "$OPT_PATH") || {
+	delta=$(diff <(printf "%s" "$OPT_CONTENT") "$OPT_PATH") || {
 		if [ "$?" != 1 ]; then
 			return $?
 		fi
 	}
 	if [ -n "$delta" ]; then
-		echo "File ${OPT_PATH} changed:"$'\n'"$delta"
+		printf "%s\n" "File ${OPT_PATH} changed:"$'\n'"$delta"
 		if [ "${CHECK_MODE:-0}" = 0 ]; then
-			echo -n "$OPT_CONTENT" > "$OPT_PATH"
+			printf "%s" "$OPT_CONTENT" > "$OPT_PATH"
 		fi
 	fi
 }
 
 TEST_SUITES+=(test_file_content)
 test_file_content() {
-	echo -n "${FUNCNAME[0]} "
+	printf "%s" "${FUNCNAME[0]} "
 	declare image
 	for image in debian alpine rockylinux; do
 		launch_container "$image"
@@ -492,7 +492,7 @@ test_file_content() {
 		EOF
 		remove_container
 	done
-	echo "ok"
+	printf "%s\n" "ok"
 }
 
 ###
@@ -566,7 +566,7 @@ module_apt_packages() {
 
 TEST_SUITES+=(test_apt_packages)
 test_apt_packages() {
-	echo -n "${FUNCNAME[0]} "
+	printf "%s" "${FUNCNAME[0]} "
 	launch_container "debian"
 	exec_container > /dev/null <<- "EOF"
 		dpkg-query -s eatmydata &>/dev/null && exit 1 || :
@@ -591,7 +591,7 @@ test_apt_packages() {
 		[ -n "$delta" ]
 	EOF
 	remove_container
-	echo "ok"
+	printf "%s\n" "ok"
 }
 
 ###
@@ -637,11 +637,11 @@ module_apt_repository() {
 		path "$repository_file" \
 		mode "644"
 	if [ -n "$delta" ]; then
-		echo "$delta"
+		printf "%s\n" "$delta"
 	fi
 	if [ ! -e "$keyring_file" ]; then
 		if [ "${CHECK_MODE:-0}" = 1 ]; then
-			echo "Create keyring ${keyring_file}"
+			printf "%s\n" "Create keyring ${keyring_file}"
 		elif [ "${OPT_KEYRING_ARMORED:-0}" = 1 ]; then
 			wget -q -O - "$OPT_KEYRING_URL" | gpg --dearmor > "$keyring_file"
 		else
@@ -656,7 +656,7 @@ module_apt_repository() {
 
 TEST_SUITES+=(test_apt_repository)
 test_apt_repository() {
-	echo -n "${FUNCNAME[0]} "
+	printf "%s" "${FUNCNAME[0]} "
 	launch_container "debian"
 	exec_container > /dev/null <<- "EOF"
 		source /etc/os-release
@@ -672,7 +672,7 @@ test_apt_repository() {
 		[ -e /usr/share/keyrings/nodesource-archive-keyring.gpg ]
 	EOF
 	remove_container
-	echo "ok"
+	printf "%s\n" "ok"
 }
 
 ###
@@ -717,7 +717,7 @@ module_apt_hold() {
 
 TEST_SUITES+=(test_apt_hold)
 test_apt_hold() {
-	echo -n "${FUNCNAME[0]} "
+	printf "%s" "${FUNCNAME[0]} "
 	launch_container "debian"
 	exec_container > /dev/null <<- "EOF"
 		package="bash"
@@ -734,7 +734,7 @@ test_apt_hold() {
 		[ -z "$status" ]
 	EOF
 	remove_container
-	echo "ok"
+	printf "%s\n" "ok"
 }
 
 ###
@@ -797,7 +797,7 @@ module_user() {
 
 TEST_SUITES+=(test_user)
 test_user() {
-	echo -n "${FUNCNAME[0]} "
+	printf "%s" "${FUNCNAME[0]} "
 	for image in debian rockylinux; do
 		launch_container "$image"
 		exec_container > /dev/null <<- "EOF"
@@ -830,7 +830,7 @@ test_user() {
 		EOF
 		remove_container
 	done
-	echo "ok"
+	printf "%s\n" "ok"
 }
 
 ###
@@ -842,7 +842,7 @@ module_nodejs() {
 	declare codename
 	{
 		source /etc/os-release
-		echo "$VERSION_CODENAME"
+		printf "%s\n" "$VERSION_CODENAME"
 	} | read -r codename
 	module_apt_repository \
 		name nodesource \
@@ -864,7 +864,7 @@ module_varnish() {
 	declare codename
 	{
 		source /etc/os-release
-		echo "$VERSION_CODENAME"
+		printf "%s\n" "$VERSION_CODENAME"
 	} | read -r codename
 	module_apt_repository \
 		name varnish \
@@ -885,7 +885,7 @@ module_netdata() {
 	declare codename
 	{
 		source /etc/os-release
-		echo "$VERSION_CODENAME"
+		printf "%s\n" "$VERSION_CODENAME"
 	} | read -r codename
 	module_apt_repository \
 		name netdata \
@@ -904,7 +904,7 @@ module_postgresql() {
 	declare codename
 	{
 		source /etc/os-release
-		echo "$VERSION_CODENAME"
+		printf "%s\n" "$VERSION_CODENAME"
 	} | read -r codename
 	module_apt_repository \
 		name postgresql \
@@ -942,7 +942,7 @@ module_mysql() {
 		codename
 	{
 		source /etc/os-release
-		echo "$VERSION_CODENAME"
+		printf "%s\n" "$VERSION_CODENAME"
 	} | read -r codename
 	module_apt_repository \
 		name "mysql-${OPT_VERSION}" \
@@ -1011,7 +1011,7 @@ module_php_sury() {
 	done
 	{
 		source /etc/os-release
-		echo "$VERSION_CODENAME"
+		printf "%s\n" "$VERSION_CODENAME"
 	} | read -r codename
 	module_apt_repository \
 		name sury \
@@ -1044,7 +1044,7 @@ module_docker() {
 	declare codename
 	{
 		source /etc/os-release
-		echo "$VERSION_CODENAME"
+		printf "%s\n" "$VERSION_CODENAME"
 	} | read -r codename
 	module_apt_repository \
 		name docker \
@@ -1076,7 +1076,7 @@ module_directory() {
 		fi
 	elif [ -e "$OPT_PATH" ]; then
 		if [ ! -d "$OPT_PATH" ] && [ "${CHECK_MODE:-0}" = 0 ]; then
-			echo "Path ${OPT_PATH} exists and is not a directory" >&2
+			printf "%s\n" "Path ${OPT_PATH} exists and is not a directory" >&2
 			return 1
 		fi
 	else
@@ -1091,7 +1091,7 @@ module_directory() {
 
 TEST_SUITES+=(test_directory)
 test_directory() {
-	echo -n "${FUNCNAME[0]} "
+	printf "%s" "${FUNCNAME[0]} "
 	declare image
 	for image in debian alpine rockylinux; do
 		launch_container "$image"
@@ -1118,7 +1118,7 @@ test_directory() {
 		EOF
 		remove_container
 	done
-	echo "ok"
+	printf "%s\n" "ok"
 }
 
 ###
@@ -1148,7 +1148,7 @@ module_systemd_unit() {
 			path "$path" \
 			mode "644"
 		if [ -n "$delta" ]; then
-			echo "$delta"
+			printf "%s\n" "$delta"
 			check_do "Reload systemd" \
 				systemctl daemon-reload
 		fi
@@ -1183,7 +1183,7 @@ module_systemd_unit() {
 
 TEST_SUITES+=(test_systemd_unit)
 test_systemd_unit() {
-	echo -n "${FUNCNAME[0]} "
+	printf "%s" "${FUNCNAME[0]} "
 	launch_container "debian"
 	exec_container > /dev/null <<- "EOF"
 		declare -a INVOCATIONS=()
@@ -1219,7 +1219,7 @@ test_systemd_unit() {
 		[ "${#INVOCATIONS[@]}" = 4 ]
 	EOF
 	remove_container
-	echo "ok"
+	printf "%s\n" "ok"
 }
 
 ###
@@ -1256,7 +1256,7 @@ flush_handlers() {
 
 TEST_SUITES+=(test_handlers)
 test_handlers() {
-	echo -n "${FUNCNAME[0]} "
+	printf "%s" "${FUNCNAME[0]} "
 	launch_container "debian"
 	exec_container > /dev/null <<- "EOF"
 		add_handler touch /test1.txt
@@ -1271,7 +1271,7 @@ test_handlers() {
 		rm /test3.txt
 	EOF
 	remove_container
-	echo "ok"
+	printf "%s\n" "ok"
 }
 
 ###
@@ -1322,7 +1322,7 @@ module_file() {
 		fi
 		;;
 	*)
-		echo "Unknown file state: ${OPT_STATE}" >&2
+		printf "%s\n" "Unknown file state: ${OPT_STATE}" >&2
 		return 1
 		;;
 	esac
@@ -1344,7 +1344,7 @@ module_file() {
 
 TEST_SUITES+=(test_file)
 test_file() {
-	echo -n "${FUNCNAME[0]} "
+	printf "%s" "${FUNCNAME[0]} "
 	declare image
 	for image in debian alpine rockylinux; do
 		launch_container "$image"
@@ -1394,7 +1394,7 @@ test_file() {
 		EOF
 		remove_container
 	done
-	echo "ok"
+	printf "%s\n" "ok"
 }
 
 ###
@@ -1406,32 +1406,32 @@ verify_checksum() {
 		input_sum \
 		input
 	input=$(base64 -w 0)
-	input_sum=$(echo "$input" | base64 -d | "${algorithm}sum" | cut -d " " -f 1)
+	input_sum=$(printf "%s\n" "$input" | base64 -d | "${algorithm}sum" | cut -d " " -f 1)
 	if [ "$sum" != "$input_sum" ]; then
-		echo "Input checksum mismatch: ${input_sum}" >&2
+		printf "%s\n" "Input checksum mismatch: ${input_sum}" >&2
 		return 1
 	fi
-	echo "$input" | base64 -d
+	printf "%s\n" "$input" | base64 -d
 }
 
 TEST_SUITES+=(test_verify_checksum)
 test_verify_checksum() {
-	echo -n "${FUNCNAME[0]} "
+	printf "%s" "${FUNCNAME[0]} "
 	declare image
 	for image in debian alpine rockylinux; do
 		launch_container "$image"
 		exec_container > /dev/null <<- "EOF"
 			payload="test"
-			checksum=$(echo "$payload" | sha256sum | cut -d " " -f 1)
-			echo "$payload" | verify_checksum sha256 "$checksum" > /dev/null
+			checksum=$(printf "%s\n" "$payload" | sha256sum | cut -d " " -f 1)
+			printf "%s\n" "$payload" | verify_checksum sha256 "$checksum" > /dev/null
 			failed=0
-			echo "${payload}extra" | verify_checksum sha256 "$checksum" &> /dev/null \
+			printf "%s\n" "${payload}extra" | verify_checksum sha256 "$checksum" &> /dev/null \
 				|| { failed=1; }
 			[ "$failed" = 1 ]
 		EOF
 		remove_container
 	done
-	echo "ok"
+	printf "%s\n" "ok"
 }
 
 get_exit_code() {
@@ -1449,7 +1449,7 @@ get_exit_code() {
 
 TEST_SUITES+=(test_get_exit_code)
 test_get_exit_code() {
-	echo -n "${FUNCNAME[0]} "
+	printf "%s" "${FUNCNAME[0]} "
 	declare image
 	for image in debian alpine rockylinux; do
 		launch_container "$image"
@@ -1464,7 +1464,7 @@ test_get_exit_code() {
 		EOF
 		remove_container
 	done
-	echo "ok"
+	printf "%s\n" "ok"
 }
 
 file_to_function() {
@@ -1491,13 +1491,13 @@ file_to_function() {
 			shift
 			;;
 		*)
-			echo "Wrong option: ${arg1}" >&2
+			printf "%s\n" "Wrong option: ${arg1}" >&2
 			return 1
 			;;
 		esac
 	done
 	if [ ! -v filename ]; then
-		echo "Filename must be provided" >&2
+		printf "%s\n" "Filename must be provided" >&2
 		return 1
 	fi
 	if [ ! -v name ]; then
@@ -1516,7 +1516,7 @@ file_to_function() {
 				--batch \
 				--quiet \
 				--decrypt \
-				--passphrase-file <(echo "$password") \
+				--passphrase-file <(printf "%s" "$password") \
 				<"$filename" \
 				| base64 -w 0
 		)
@@ -1526,7 +1526,7 @@ file_to_function() {
 
 TEST_SUITES+=("test_file_to_function")
 test_file_to_function() {
-	echo -n "${FUNCNAME[0]} "
+	printf "%s" "${FUNCNAME[0]} "
 	declare image
 	for image in debian alpine rockylinux; do
 		launch_container "$image"
@@ -1549,7 +1549,7 @@ test_file_to_function() {
 				--batch \
 				--quiet \
 				--symmetric \
-				--passphrase-file <(echo qwerty) \
+				--passphrase-file <(printf "%s" qwerty) \
 				</etc/resolv.conf \
 				>/etc/resolv.conf.gpg
 			file_to_function -p qwerty -f /etc/resolv.conf.gpg
@@ -1558,7 +1558,7 @@ test_file_to_function() {
 		EOF
 		remove_container
 	done
-	echo "ok"
+	printf "%s\n" "ok"
 }
 
 launch_container() {
@@ -1707,7 +1707,7 @@ export_functions() {
 		requires=${exported["$fn"]}
 		requires=${requires## }
 		requires=${requires%% }
-		echo "REQUIREMENTS[\"${fn}\"]=\"${requires}\""
+		printf "%s\n" "REQUIREMENTS[\"${fn}\"]=\"${requires}\""
 		declare -pf "$fn"
 		echo
 	done
@@ -1737,12 +1737,12 @@ main() {
 		else
 			export_command "$@"
 		fi
-		echo -n "#"
+		printf "%s" "#"
 		printf " %q" "$@"
 		echo
 	;;
 	*)
-		echo "Unknown command: ${arg1}" >&2
+		printf "%s\n" "Unknown command: ${arg1}" >&2
 		return 1
 	;;
 	esac
