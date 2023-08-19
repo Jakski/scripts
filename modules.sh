@@ -163,6 +163,139 @@ test_export_command() {
 	printf "%s\n" "ok"
 }
 
+REQUIREMENTS["module_gnupg_key"]=""
+module_gnupg_key() {
+	eval "$(get_options "fingerprint key state secret" "$@")"
+	: \
+		"${OPT_STATE:=1}" \
+		"${OPT_SECRET:=0}"
+	declare -a \
+		opts=(--quiet --batch --pinentry-mode loopback --yes) \
+		fingerprint
+	declare present=0
+	if [ -v OPT_KEY ]; then
+		printf "%s" "$OPT_KEY" \
+			| gpg "${opts[@]}" --show-key --with-colons --with-fingerprint - \
+			| awk -F ":" '$1 == "fpr" {print $10}' \
+			| mapfile -t fingerprint
+	else
+		fingerprint=("$OPT_FINGERPRINT")
+	fi
+	if [ "$OPT_SECRET" = 0 ] && gpg "${opts[@]}" --list-key "$fingerprint" &>/dev/null; then
+		present=1
+	elif [ "$OPT_SECRET" = 1 ] && gpg "${opts[@]}" --list-secret-key "$fingerprint" &>/dev/null; then
+		present=1
+	fi
+	if [ "$OPT_STATE" = 1 ] && [ "$present" = 0 ]; then
+		printf "%s\n" "Importing gnupg key: ${fingerprint}"
+		if [ "${CHECK_MODE:=0}" = 0 ]; then
+			printf "%s" "$OPT_KEY" | gpg "${opts[@]}" --import -
+		fi
+	elif [ "$OPT_STATE" = 0 ] && [ "$present" = 1 ]; then
+		printf "%s\n" "Removing gnupg key: ${fingerprint}"
+		if [ "${CHECK_MODE:=0}" = 0 ]; then
+			if [ "$OPT_SECRET" = 1 ]; then
+				gpg "${opts[@]}" --delete-secret-key "$fingerprint"
+			else
+				gpg "${opts[@]}" --delete-key "$fingerprint"
+			fi
+		fi
+	fi
+}
+
+TEST_SUITES+=("test_module_gnupg_key")
+test_module_gnupg_key() {
+	printf "%s" "${FUNCNAME[0]} "
+	declare image
+	for image in debian alpine rockylinux; do
+		launch_container "$image"
+		exec_container <<-"EOF"
+			declare -a \
+				opts=(--quiet --batch --pinentry-mode loopback --yes --trust-model always) \
+				cmd \
+				fingerprint \
+				secret_key \
+				public_key
+			declare \
+				pwd="qwertyqwerty" \
+				msg="test123456" \
+				email="testing@testing.local" \
+				r
+
+			gpg "${opts[@]}" --passphrase "$pwd" --quick-gen-key "$email" default default
+			gpg "${opts[@]}" --armor --export "$email" \
+				| mapfile -d "" public_key
+			printf "%s" "$public_key" \
+				| gpg "${opts[@]}" --show-key --with-colons --with-fingerprint - \
+				| awk -F ":" '$1 == "fpr" {print $10}' \
+				| mapfile -t fingerprint
+			gpg "${opts[@]}" --armor --passphrase "$pwd" --export-secret-key "$email" \
+				| mapfile -d "" secret_key
+
+			printf "%s" "$msg" > t.txt
+			gpg "${opts[@]}" --encrypt --recipient "$email" t.txt
+			r=$(gpg "${opts[@]}" --passphrase "$pwd" --decrypt <"t.txt.gpg")
+			[ "$r" = "$msg" ]
+
+			cmd=(module_gnupg_key \
+				fingerprint "$fingerprint" \
+				secret 1
+				state 0
+			)
+			r=$(CHECK_MODE=1 "${cmd[@]}")
+			[ -n "$r" ]
+			r=$("${cmd[@]}")
+			[ -n "$r" ]
+			r=$("${cmd[@]}")
+			[ -z "$r" ]
+			if gpg "${opts[@]}" --passphrase "$pwd" --decrypt <"t.txt.gpg" &>/dev/null; then
+				printf "%s\n" "Decrypted message, when secret key shouldn't be present"
+			fi
+
+			cmd=(module_gnupg_key \
+				fingerprint "$fingerprint" \
+				state 0
+			)
+			r=$(CHECK_MODE=1 "${cmd[@]}")
+			[ -n "$r" ]
+			r=$("${cmd[@]}")
+			[ -n "$r" ]
+			r=$("${cmd[@]}")
+			[ -z "$r" ]
+
+			cmd=(module_gnupg_key \
+				key "$public_key"
+			)
+			r=$(CHECK_MODE=1 "${cmd[@]}")
+			[ -n "$r" ]
+			r=$("${cmd[@]}")
+			[ -n "$r" ]
+			r=$("${cmd[@]}")
+			[ -z "$r" ]
+			rm "t.txt.gpg"
+			gpg "${opts[@]}" --encrypt --recipient "$email" t.txt
+			if gpg "${opts[@]}" --passphrase "$pwd" --decrypt <"t.txt.gpg" &>/dev/null; then
+				printf "%s\n" "Decrypted message, when secret key shouldn't be present"
+			fi
+
+			cmd=(module_gnupg_key \
+				key "$secret_key" \
+				secret 1
+			)
+			r=$(CHECK_MODE=1 "${cmd[@]}")
+			[ -n "$r" ]
+			r=$("${cmd[@]}")
+			[ -n "$r" ]
+			r=$("${cmd[@]}")
+			[ -z "$r" ]
+			r=$(gpg "${opts[@]}" --passphrase "$pwd" --decrypt <"t.txt.gpg")
+			[ "$r" = "$msg" ]
+		EOF
+		remove_container
+	done
+	printf "%s\n" "ok"
+}
+
 ###
 # Pipe script into shell started as a different user.
 REQUIREMENTS["become"]="export_command"
@@ -1578,8 +1711,7 @@ remove_container() {
 
 #shellcheck disable=SC2120
 exec_container() {
-	cat "$SCRIPT_FILE" - | docker exec \
-		--interactive \
+	cat "$SCRIPT_FILE" - | docker exec -i \
 		"$TEST_CONTAINER" \
 		/bin/bash -c "TEST_MODULES=1; source /dev/stdin"
 }
