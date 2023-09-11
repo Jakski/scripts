@@ -573,8 +573,10 @@ test_file_permissions() {
 # Ensure, that file has content.
 REQUIREMENTS["module_file_content"]="get_options check_do"
 module_file_content() {
-	eval "$(get_options "path content" "$@")"
+	eval "$(get_options "path content base64" "$@")"
+	: "${OPT_BASE64:=0}"
 	declare \
+		exit_code=0 \
 		delta="" \
 		old_umask
 	if [ ! -f "$OPT_PATH" ]; then
@@ -587,15 +589,22 @@ module_file_content() {
 			return 0
 		fi
 	fi
-	delta=$(diff <(printf "%s" "$OPT_CONTENT") "$OPT_PATH") || {
-		if [ "$?" != 1 ]; then
-			return $?
-		fi
-	}
+	if [ "$OPT_BASE64" = 0 ]; then
+		delta=$(printf "%s" "$OPT_CONTENT" | diff - "$OPT_PATH") || exit_code=$?
+	else
+		delta=$(printf "%s" "$OPT_CONTENT" | base64 -d | diff - "$OPT_PATH") || exit_code=$?
+	fi
+	if [ "$exit_code" != 0 ] && [ "$exit_code" != 1 ]; then
+		return "$exit_code"
+	fi
 	if [ -n "$delta" ]; then
 		printf "%s\n" "File ${OPT_PATH} changed:"$'\n'"$delta"
 		if [ "${CHECK_MODE:-0}" = 0 ]; then
-			printf "%s" "$OPT_CONTENT" > "$OPT_PATH"
+			if [ "$OPT_BASE64" = 0 ]; then
+				printf "%s" "$OPT_CONTENT" > "$OPT_PATH"
+			else
+				printf "%s" "$OPT_CONTENT" | base64 -d > "$OPT_PATH"
+			fi
 		fi
 	fi
 }
@@ -622,6 +631,22 @@ test_file_content() {
 				path /test.txt \
 				content ""
 			[ "$(cat /test.txt)" = "" ]
+			content=$(cat /bin/sh | base64 -w0)
+			printf "%s" "text data" >/test
+			for i in 1 2; do
+				delta=$(module_file_content \
+					path /test \
+					content "$content" \
+					base64 1
+				)
+			done
+			[ -z "$delta" ]
+			checksum1=$(sha256sum /bin/sh | cut -d " " -f 1)
+			checksum2=$(sha256sum /test | cut -d " " -f 1)
+			[ "$checksum1" = "$checksum2" ]
+			chmod +x /test
+			echo "true" | /test -
+			rm /test
 		EOF
 		remove_container
 	done
@@ -729,7 +754,7 @@ test_apt_packages() {
 
 ###
 # Ensure, that APT repository exists.
-REQUIREMENTS["module_apt_repository"]="get_options check_do module_file_content module_file_permissions"
+REQUIREMENTS["module_apt_repository"]="module_file"
 module_apt_repository() {
 	eval "$(get_options "\
 		name \
@@ -738,6 +763,7 @@ module_apt_repository() {
 		components \
 		architectures \
 		keyring_url \
+		keyring_content \
 		keyring_prefix \
 		keyring_armored \
 		types \
@@ -765,14 +791,16 @@ module_apt_repository() {
 		content="$content"$'\n'"Components: ${OPT_COMPONENTS}"
 	fi
 	content="$content"$'\n'"Signed-By: ${keyring_file}"
-	delta=$(module_file_content path "$repository_file" content "$content")
-	module_file_permissions \
+	delta=$(module_file \
+		state "file" \
 		path "$repository_file" \
+		content "$content" \
 		mode "644"
+	)
 	if [ -n "$delta" ]; then
 		printf "%s\n" "$delta"
 	fi
-	if [ ! -e "$keyring_file" ]; then
+	if [ ! -e "$keyring_file" ] && [ -v OPT_KEYRING_URL ]; then
 		if [ "${CHECK_MODE:-0}" = 1 ]; then
 			printf "%s\n" "Create keyring ${keyring_file}"
 		elif [ "${OPT_KEYRING_ARMORED:-0}" = 1 ]; then
@@ -780,6 +808,14 @@ module_apt_repository() {
 		else
 			wget -q -O  "$keyring_file" "$OPT_KEYRING_URL"
 		fi
+	else
+		content=$(printf "%s" "$OPT_KEYRING_CONTENT" | gpg --dearmor | base64 -w0)
+		module_file \
+			state "file" \
+			path "$keyring_file" \
+			content "$content" \
+			base64 1 \
+			mode "644"
 	fi
 	if [ "${OPT_UPDATE:-1}" = 1 ] && [ -n "$delta" ]; then
 		check_do "Update APT repositories" \
@@ -1418,60 +1454,65 @@ module_directory
 module_symlink
 "
 module_file() {
-	eval "$(get_options "path src content recursive mode owner group state" "$@")"
-	declare -a permission_options=()
+	eval "$(get_options "path src content base64 recursive mode owner group state" "$@")"
+	declare -a options=()
 	case "$OPT_STATE" in
-	directory)
-		module_directory \
-			path "$OPT_PATH"
-		;;
-	file)
-		if [ -v OPT_CONTENT ]; then
-			module_file_content \
-				path "$OPT_PATH" \
-				content "$OPT_CONTENT"
-		elif [ ! -e "$OPT_PATH" ]; then
-			check_do "Create file ${OPT_PATH}" \
-				install -m 700 /dev/null "$OPT_PATH"
-		fi
-		;;
-	symlink)
-		module_symlink \
-			src "$OPT_SRC" \
-			dest "$OPT_PATH"
-		;;
-	absent)
-		if [ -L "$OPT_PATH" ]; then
-			check_do "Remove symlink ${OPT_PATH}" \
-				rm "$OPT_PATH"
-		elif [ -f "$OPT_PATH" ]; then
-			check_do "Remove file ${OPT_PATH}" \
-				rm "$OPT_PATH"
-		elif [ -d "$OPT_PATH" ]; then
+		directory)
 			module_directory \
-				path "$OPT_PATH" \
-				recursive "${OPT_RECURSIVE:-0}" \
-				state 0
-		fi
-		;;
-	*)
-		printf "%s\n" "Unknown file state: ${OPT_STATE}" >&2
-		return 1
-		;;
+				path "$OPT_PATH"
+			;;
+		file)
+			if [ -v OPT_CONTENT ]; then
+				if [ -v OPT_BASE64 ]; then
+					options+=(base64 "$OPT_BASE64")
+				fi
+				module_file_content \
+					path "$OPT_PATH" \
+					content "$OPT_CONTENT" \
+					"${options[@]}"
+			elif [ ! -e "$OPT_PATH" ]; then
+				check_do "Create file ${OPT_PATH}" \
+					install -m 700 /dev/null "$OPT_PATH"
+			fi
+			;;
+		symlink)
+			module_symlink \
+				src "$OPT_SRC" \
+				dest "$OPT_PATH"
+			;;
+		absent)
+			if [ -L "$OPT_PATH" ]; then
+				check_do "Remove symlink ${OPT_PATH}" \
+					rm "$OPT_PATH"
+			elif [ -f "$OPT_PATH" ]; then
+				check_do "Remove file ${OPT_PATH}" \
+					rm "$OPT_PATH"
+			elif [ -d "$OPT_PATH" ]; then
+				module_directory \
+					path "$OPT_PATH" \
+					recursive "${OPT_RECURSIVE:-0}" \
+					state 0
+			fi
+			;;
+		*)
+			printf "%s\n" "Unknown file state: ${OPT_STATE}" >&2
+			return 1
+			;;
 	esac
+	options=()
 	if [ -v OPT_MODE ]; then
-		permission_options+=(mode "$OPT_MODE")
+		options+=(mode "$OPT_MODE")
 	fi
 	if [ -v OPT_OWNER ]; then
-		permission_options+=(owner "$OPT_OWNER")
+		options+=(owner "$OPT_OWNER")
 	fi
 	if [ -v OPT_GROUP ]; then
-		permission_options+=(group "$OPT_GROUP")
+		options+=(group "$OPT_GROUP")
 	fi
-	if [ "${#permission_options[@]}" != 0 ]; then
+	if [ "${#options[@]}" != 0 ]; then
 		module_file_permissions \
 			path "$OPT_PATH" \
-			"${permission_options[@]}"
+			"${options[@]}"
 	fi
 }
 
