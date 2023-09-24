@@ -13,7 +13,14 @@ shopt -s inherit_errexit nullglob lastpipe
 TEST_CONTAINER=""
 #shellcheck disable=SC2035
 SCRIPT_FILE=$(readlink -f "$0")
-declare -a TEST_SUITES=()
+declare -a \
+	TEST_SUITES=() \
+	ALL_IMAGES=(
+		debian_bookworm
+		debian_bullseye
+		rockylinux_9
+		alpine_3_18
+	)
 declare -A REQUIREMENTS=()
 
 on_exit() {
@@ -134,7 +141,7 @@ TEST_SUITES+=("test_export_command")
 test_export_command() {
 	printf "%s" "${FUNCNAME[0]} "
 	declare image
-	for image in debian alpine rockylinux; do
+	for image in "${ALL_IMAGES[@]}"; do
 		launch_container "$image"
 		exec_container > /dev/null <<- "EOF"
 			REQUIREMENTS["fn1"]="fn2"
@@ -203,11 +210,11 @@ module_gnupg_key() {
 	fi
 }
 
-TEST_SUITES+=("test_module_gnupg_key")
-test_module_gnupg_key() {
+TEST_SUITES+=("test_gnupg_key")
+test_gnupg_key() {
 	printf "%s" "${FUNCNAME[0]} "
 	declare image
-	for image in debian alpine rockylinux; do
+	for image in "${ALL_IMAGES[@]}"; do
 		launch_container "$image"
 		exec_container <<-"EOF"
 			declare -a \
@@ -310,7 +317,7 @@ TEST_SUITES+=("test_become")
 test_become() {
 	printf "%s" "${FUNCNAME[0]} "
 	declare image
-	for image in debian alpine rockylinux; do
+	for image in "${ALL_IMAGES[@]}"; do
 		launch_container "$image"
 		exec_container > /dev/null <<- "EOF"
 			mkdir /test
@@ -333,33 +340,65 @@ get_options() {
 		keys \
 		key \
 		name \
-		value \
-		is_opt_found
-	declare -a opts 
+		value
+	declare -a \
+		opts \
+		values
 	read -r -a keys <<< "$1"
 	shift
 	opts=("$@")
 	for key in "${keys[@]}"; do
-		is_opt_found=0
+		values=()
 		set -- "${opts[@]}"
 		while [ "$#" != 0 ]; do
 			name=$1
 			value=$2
 			shift 2
 			if [ "$name" = "$key" ]; then
-				is_opt_found=1
-				break
+				values+=("$value")
 			fi
 		done
 		key=${key//-/_}
 		key=$(printf "%q" "OPT_${key^^}")
-		if [ "$is_opt_found" = 0 ]; then
+		if [ "${#values[@]}" = 0 ]; then
 			printf "%s\n" "declare ${key}"
-		else
-			value=$(printf "%q" "$value")
+		elif [ "${#values[@]}" = 1 ]; then
+			value=$(printf "%q" "${values[0]}")
 			printf "%s\n" "declare ${key}=${value}"
+		else
+			printf "%s" "declare -a ${key}=("
+			printf "%q " "${values[@]}"
+			printf "%s\n" ")"
 		fi
 	done
+}
+
+TEST_SUITES+=("test_get_options")
+test_get_options() {
+	printf "%s" "${FUNCNAME[0]} "
+	declare image
+	for image in "${ALL_IMAGES[@]}"; do
+		launch_container "$image"
+		exec_container > /dev/null <<- "EOF"
+			declare opts="name scripts enabled"
+			declare -a args=()
+			args+=("name" "test")
+			args+=("scripts" "script1")
+			args+=("scripts" "scr"$'\n'"ipt2")
+			args+=("scripts" "sc(ri)pt3")
+			declare vars
+			vars=$(get_options "$opts" "${args[@]}")
+			eval "$vars"
+			[ "$OPT_NAME" = "test" ]
+			[ "${#OPT_SCRIPTS[@]}" = 3 ]
+			[ "${OPT_SCRIPTS[0]}" = "script1" ]
+			[ "${OPT_SCRIPTS[1]}" = "scr"$'\n'"ipt2" ]
+			[ "${OPT_SCRIPTS[2]}" = "sc(ri)pt3" ]
+			[ ! -v OPT_ENABLED ]
+		EOF
+		remove_container
+	done
+	printf "%s\n" "ok"
 }
 
 ###
@@ -397,7 +436,7 @@ TEST_SUITES+=(test_symlink)
 test_symlink() {
 	printf "%s" "${FUNCNAME[0]} "
 	declare image
-	for image in debian alpine rockylinux; do
+	for image in "${ALL_IMAGES[@]}"; do
 		launch_container "$image"
 		exec_container > /dev/null <<- "EOF"
 			module_symlink \
@@ -475,7 +514,7 @@ TEST_SUITES+=(test_line_in_file)
 test_line_in_file() {
 	printf "%s" "${FUNCNAME[0]} "
 	declare image
-	for image in debian alpine rockylinux; do
+	for image in "${ALL_IMAGES[@]}"; do
 		launch_container "$image"
 		exec_container > /dev/null <<- "EOF"
 			printf "%s\n" "line 1" > /test.txt
@@ -551,7 +590,7 @@ TEST_SUITES+=(test_file_permissions)
 test_file_permissions() {
 	printf "%s" "${FUNCNAME[0]} "
 	declare image
-	for image in debian alpine rockylinux; do
+	for image in "${ALL_IMAGES[@]}"; do
 		launch_container "$image"
 		exec_container > /dev/null <<- "EOF"
 			touch /test.txt
@@ -613,7 +652,7 @@ TEST_SUITES+=(test_file_content)
 test_file_content() {
 	printf "%s" "${FUNCNAME[0]} "
 	declare image
-	for image in debian alpine rockylinux; do
+	for image in "${ALL_IMAGES[@]}"; do
 		launch_container "$image"
 		exec_container > /dev/null <<- "EOF"
 			rm -f /test.txt
@@ -725,30 +764,33 @@ module_apt_packages() {
 TEST_SUITES+=(test_apt_packages)
 test_apt_packages() {
 	printf "%s" "${FUNCNAME[0]} "
-	launch_container "debian"
-	exec_container > /dev/null <<- "EOF"
-		dpkg-query -s eatmydata &>/dev/null && exit 1 || :
-		module_apt_packages \
-			names "eatmydata bash"
-		dpkg-query -s eatmydata &>/dev/null
-		module_apt_packages \
-			names "eatmydata" \
-			state 0
-		dpkg-query -s eatmydata &>/dev/null && exit 1 || :
-		declare delta
-		delta=$(module_apt_packages \
-			names "eatmydata" \
-			state 0
-		)
-		[ -z "$delta" ]
-		delta=$(module_apt_packages \
-			names "eatmydata" \
-			state 0 \
-			cache_valid_time 1
-		)
-		[ -n "$delta" ]
-	EOF
-	remove_container
+	declare image
+	for image in debian_bookworm debian_bullseye; do
+		launch_container "$image"
+		exec_container > /dev/null <<- "EOF"
+			dpkg-query -s eatmydata &>/dev/null && exit 1 || :
+			module_apt_packages \
+				names "eatmydata bash"
+			dpkg-query -s eatmydata &>/dev/null
+			module_apt_packages \
+				names "eatmydata" \
+				state 0
+			dpkg-query -s eatmydata &>/dev/null && exit 1 || :
+			declare delta
+			delta=$(module_apt_packages \
+				names "eatmydata" \
+				state 0
+			)
+			[ -z "$delta" ]
+			delta=$(module_apt_packages \
+				names "eatmydata" \
+				state 0 \
+				cache_valid_time 1
+			)
+			[ -n "$delta" ]
+		EOF
+		remove_container
+	done
 	printf "%s\n" "ok"
 }
 
@@ -826,21 +868,24 @@ module_apt_repository() {
 TEST_SUITES+=(test_apt_repository)
 test_apt_repository() {
 	printf "%s" "${FUNCNAME[0]} "
-	launch_container "debian"
-	exec_container > /dev/null <<- "EOF"
-		source /etc/os-release
-		module_apt_repository \
-			name nodesource \
-			url "https://deb.nodesource.com/node_18.x" \
-			keyring_url "https://deb.nodesource.com/gpgkey/nodesource.gpg.key" \
-			keyring_armored 1 \
-			suites "$VERSION_CODENAME" \
-			components main
-		# TODO: Ensure, that package from a new repository can be installed.
-		[ -e /etc/apt/sources.list.d/nodesource.sources ]
-		[ -e /usr/share/keyrings/nodesource-archive-keyring.gpg ]
-	EOF
-	remove_container
+	declare image
+	for image in debian_bookworm debian_bullseye; do
+		launch_container "$image"
+		exec_container > /dev/null <<- "EOF"
+			source /etc/os-release
+			module_apt_repository \
+				name nodesource \
+				url "https://deb.nodesource.com/node_18.x" \
+				keyring_url "https://deb.nodesource.com/gpgkey/nodesource.gpg.key" \
+				keyring_armored 1 \
+				suites "$VERSION_CODENAME" \
+				components main
+			# TODO: Ensure, that package from a new repository can be installed.
+			[ -e /etc/apt/sources.list.d/nodesource.sources ]
+			[ -e /usr/share/keyrings/nodesource-archive-keyring.gpg ]
+		EOF
+		remove_container
+	done
 	printf "%s\n" "ok"
 }
 
@@ -887,22 +932,25 @@ module_apt_hold() {
 TEST_SUITES+=(test_apt_hold)
 test_apt_hold() {
 	printf "%s" "${FUNCNAME[0]} "
-	launch_container "debian"
-	exec_container > /dev/null <<- "EOF"
-		package="bash"
-		status=$(apt-mark showhold "$package")
-		[ -z "$status" ]
-		module_apt_hold \
-			names "$package"
-		status=$(apt-mark showhold "$package")
-		[ "$status" = "$package" ]
-		module_apt_hold \
-			names "$package" \
-			state 0
-		status=$(apt-mark showhold "$package")
-		[ -z "$status" ]
-	EOF
-	remove_container
+	declare image
+	for image in debian_bullseye debian_bookworm; do
+		launch_container "$image"
+		exec_container > /dev/null <<- "EOF"
+			package="bash"
+			status=$(apt-mark showhold "$package")
+			[ -z "$status" ]
+			module_apt_hold \
+				names "$package"
+			status=$(apt-mark showhold "$package")
+			[ "$status" = "$package" ]
+			module_apt_hold \
+				names "$package" \
+				state 0
+			status=$(apt-mark showhold "$package")
+			[ -z "$status" ]
+		EOF
+		remove_container
+	done
 	printf "%s\n" "ok"
 }
 
@@ -967,7 +1015,7 @@ module_user() {
 TEST_SUITES+=(test_user)
 test_user() {
 	printf "%s" "${FUNCNAME[0]} "
-	for image in debian rockylinux; do
+	for image in debian_bullseye debian_bookworm rockylinux_9; do
 		launch_container "$image"
 		exec_container > /dev/null <<- "EOF"
 			module_user \
@@ -1262,7 +1310,7 @@ TEST_SUITES+=(test_directory)
 test_directory() {
 	printf "%s" "${FUNCNAME[0]} "
 	declare image
-	for image in debian alpine rockylinux; do
+	for image in "${ALL_IMAGES[@]}"; do
 		launch_container "$image"
 		exec_container > /dev/null <<- "EOF"
 			module_directory \
@@ -1353,41 +1401,44 @@ module_systemd_unit() {
 TEST_SUITES+=(test_systemd_unit)
 test_systemd_unit() {
 	printf "%s" "${FUNCNAME[0]} "
-	launch_container "debian"
-	exec_container > /dev/null <<- "EOF"
-		declare -a INVOCATIONS=()
-		systemctl() {
-			INVOCATIONS+=("$*")
-			case "$1" in
-			is-active)
-				return "$ACTIVATED_RETURN"
-			;;
-			is-enabled)
-				return "$ENABLED_RETURN"
-			;;
-			esac
-		}
-		ACTIVATED_RETURN=0
-		ENABLED_RETURN=0
-		module_systemd_unit \
-			name "test" \
-			active 1
-		[ "${INVOCATIONS[0]}" = "is-active test" ]
-		[ "${#INVOCATIONS[@]}" = 1 ]
-		INVOCATIONS=()
-		ACTIVATED_RETURN=0
-		ENABLED_RETURN=1
-		module_systemd_unit \
-			name "test" \
-			active 0 \
-			enabled 1
-		[ "${INVOCATIONS[0]}" = "is-enabled test" ]
-		[ "${INVOCATIONS[1]}" = "enable test" ]
-		[ "${INVOCATIONS[2]}" = "is-active test" ]
-		[ "${INVOCATIONS[3]}" = "stop test" ]
-		[ "${#INVOCATIONS[@]}" = 4 ]
-	EOF
-	remove_container
+	declare image
+	for image in debian_bullseye debian_bookworm rockylinux_9; do
+		launch_container "$image"
+		exec_container > /dev/null <<- "EOF"
+			declare -a INVOCATIONS=()
+			systemctl() {
+				INVOCATIONS+=("$*")
+				case "$1" in
+				is-active)
+					return "$ACTIVATED_RETURN"
+				;;
+				is-enabled)
+					return "$ENABLED_RETURN"
+				;;
+				esac
+			}
+			ACTIVATED_RETURN=0
+			ENABLED_RETURN=0
+			module_systemd_unit \
+				name "test" \
+				active 1
+			[ "${INVOCATIONS[0]}" = "is-active test" ]
+			[ "${#INVOCATIONS[@]}" = 1 ]
+			INVOCATIONS=()
+			ACTIVATED_RETURN=0
+			ENABLED_RETURN=1
+			module_systemd_unit \
+				name "test" \
+				active 0 \
+				enabled 1
+			[ "${INVOCATIONS[0]}" = "is-enabled test" ]
+			[ "${INVOCATIONS[1]}" = "enable test" ]
+			[ "${INVOCATIONS[2]}" = "is-active test" ]
+			[ "${INVOCATIONS[3]}" = "stop test" ]
+			[ "${#INVOCATIONS[@]}" = 4 ]
+		EOF
+		remove_container
+	done
 	printf "%s\n" "ok"
 }
 
@@ -1426,20 +1477,23 @@ flush_handlers() {
 TEST_SUITES+=(test_handlers)
 test_handlers() {
 	printf "%s" "${FUNCNAME[0]} "
-	launch_container "debian"
-	exec_container > /dev/null <<- "EOF"
-		add_handler touch /test1.txt
-		add_handler touch /test2.txt
-		flush_handlers
-		[ -e /test1.txt ]
-		[ -e /test2.txt ]
-		rm /test1.txt /test2.txt
-		add_handler touch /test3.txt
-		flush_handlers
-		[ -e /test3.txt ]
-		rm /test3.txt
-	EOF
-	remove_container
+	declare image
+	for image in "${ALL_IMAGES[@]}"; do
+		launch_container "$image"
+		exec_container > /dev/null <<- "EOF"
+			add_handler touch /test1.txt
+			add_handler touch /test2.txt
+			flush_handlers
+			[ -e /test1.txt ]
+			[ -e /test2.txt ]
+			rm /test1.txt /test2.txt
+			add_handler touch /test3.txt
+			flush_handlers
+			[ -e /test3.txt ]
+			rm /test3.txt
+		EOF
+		remove_container
+	done
 	printf "%s\n" "ok"
 }
 
@@ -1520,7 +1574,7 @@ TEST_SUITES+=(test_file)
 test_file() {
 	printf "%s" "${FUNCNAME[0]} "
 	declare image
-	for image in debian alpine rockylinux; do
+	for image in "${ALL_IMAGES[@]}"; do
 		launch_container "$image"
 		exec_container > /dev/null <<- "EOF"
 			rm -rf /test.txt /test
@@ -1592,7 +1646,7 @@ TEST_SUITES+=(test_verify_checksum)
 test_verify_checksum() {
 	printf "%s" "${FUNCNAME[0]} "
 	declare image
-	for image in debian alpine rockylinux; do
+	for image in "${ALL_IMAGES[@]}"; do
 		launch_container "$image"
 		exec_container > /dev/null <<- "EOF"
 			payload="test"
@@ -1625,7 +1679,7 @@ TEST_SUITES+=(test_get_exit_code)
 test_get_exit_code() {
 	printf "%s" "${FUNCNAME[0]} "
 	declare image
-	for image in debian alpine rockylinux; do
+	for image in "${ALL_IMAGES[@]}"; do
 		launch_container "$image"
 		exec_container > /dev/null <<- "EOF"
 			t1() { return 1; }
@@ -1702,7 +1756,7 @@ TEST_SUITES+=("test_file_to_function")
 test_file_to_function() {
 	printf "%s" "${FUNCNAME[0]} "
 	declare image
-	for image in debian alpine rockylinux; do
+	for image in "${ALL_IMAGES[@]}"; do
 		launch_container "$image"
 		exec_container > /dev/null <<- "EOF"
 			declare checksum1 checksum2
@@ -1760,7 +1814,7 @@ exec_container() {
 build_images() {
 	declare -a dockerfile
 mapfile -d "" -t dockerfile <<EOF
-FROM debian:stable
+FROM debian:bookworm
 
 ENV PATH=/usr/local/bin:/usr/local/sbin:/bin:/sbin:/usr/bin:/usr/sbin
 
@@ -1783,12 +1837,40 @@ RUN apt-get update && apt-get install -y \
 
 ENTRYPOINT ["/bin/sleep", "infinity"]
 EOF
-	if ! docker image inspect "modules:debian" &> /dev/null; then
-		docker build -t "modules:debian" -f - . <<< "$dockerfile"
+	if ! docker image inspect "modules:debian_bookworm" &> /dev/null; then
+		docker build -t "modules:debian_bookworm" -f - . <<< "$dockerfile"
 		echo
 	fi
 mapfile -d "" -t dockerfile <<EOF
-FROM alpine:latest
+FROM debian:bullseye
+
+ENV PATH=/usr/local/bin:/usr/local/sbin:/bin:/sbin:/usr/bin:/usr/sbin
+
+RUN apt-get update && apt-get install -y \
+	apt-utils \
+	wget \
+	gpg \
+	gpg-agent \
+	bash \
+	openssh-server \
+	openssh-client \
+	jq \
+	findutils \
+	sudo \
+	curl  \
+	nano \
+	rsync \
+	diffutils \
+	ncurses-bin \
+
+ENTRYPOINT ["/bin/sleep", "infinity"]
+EOF
+	if ! docker image inspect "modules:debian_bullseye" &> /dev/null; then
+		docker build -t "modules:debian_bullseye" -f - . <<< "$dockerfile"
+		echo
+	fi
+mapfile -d "" -t dockerfile <<EOF
+FROM alpine:3.18
 
 ENV PATH=/usr/local/bin:/usr/local/sbin:/bin:/sbin:/usr/bin:/usr/sbin
 
@@ -1808,8 +1890,8 @@ RUN apk add \
 
 ENTRYPOINT ["/bin/sleep", "infinity"]
 EOF
-	if ! docker image inspect "modules:alpine" &> /dev/null; then
-		docker build -t "modules:alpine" -f - . <<< "$dockerfile"
+	if ! docker image inspect "modules:alpine_3_18" &> /dev/null; then
+		docker build -t "modules:alpine_3_18" -f - . <<< "$dockerfile"
 		echo
 	fi
 mapfile -d "" -t dockerfile << EOF
@@ -1833,8 +1915,8 @@ RUN dnf install -y --allowerasing \
 
 ENTRYPOINT ["/bin/sleep", "infinity"]
 EOF
-	if ! docker image inspect "modules:rockylinux" &> /dev/null; then
-		docker build -t "modules:rockylinux" -f - . <<< "$dockerfile"
+	if ! docker image inspect "modules:rockylinux_9" &> /dev/null; then
+		docker build -t "modules:rockylinux_9" -f - . <<< "$dockerfile"
 		echo
 	fi
 }
