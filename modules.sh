@@ -842,13 +842,15 @@ module_apt_repository() {
 	if [ -n "$delta" ]; then
 		printf "%s\n" "$delta"
 	fi
-	if [ ! -e "$keyring_file" ] && [ -v OPT_KEYRING_URL ]; then
-		if [ "${CHECK_MODE:-0}" = 1 ]; then
-			printf "%s\n" "Create keyring ${keyring_file}"
-		elif [ "${OPT_KEYRING_ARMORED:-0}" = 1 ]; then
-			wget -q -O - "$OPT_KEYRING_URL" | gpg --dearmor > "$keyring_file"
-		else
-			wget -q -O  "$keyring_file" "$OPT_KEYRING_URL"
+	if [ -v OPT_KEYRING_URL ]; then
+		if [ ! -e "$keyring_file" ]; then
+			if [ "${CHECK_MODE:-0}" = 1 ]; then
+				printf "%s\n" "Create keyring ${keyring_file}"
+			elif [ "${OPT_KEYRING_ARMORED:-0}" = 1 ]; then
+				wget -q -O - "$OPT_KEYRING_URL" | gpg --dearmor > "$keyring_file"
+			else
+				wget -q -O  "$keyring_file" "$OPT_KEYRING_URL"
+			fi
 		fi
 	else
 		content=$(printf "%s" "$OPT_KEYRING_CONTENT" | gpg --dearmor | base64 -w0)
