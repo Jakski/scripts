@@ -74,6 +74,63 @@ on_exit_remove_container() {
 }
 
 ###
+# Execute code before or after a function.
+wrap_function() {
+	declare \
+		fn=$1 \
+		pre=${2:-} \
+		post=${3:-} \
+		body="" \
+		counter \
+		line \
+		i
+	body+="${fn}() {"$'\n'
+	for i in "$pre" "$fn" "$post"; do
+		if [ -z "$i" ]; then
+			continue
+		fi
+		counter=0
+		declare -f "$i" | while IFS="" read -r line; do
+			if [ "$counter" != 0 ]; then
+				body+="${line}"$'\n'
+			fi
+			counter=$((counter+1))
+		done
+	done
+	body+="}"$'\n'
+	eval "$body"
+}
+
+TEST_SUITES+=("test_wrap_function")
+test_wrap_function() {
+	printf "%s" "${FUNCNAME[0]} "
+	declare image
+	for image in "${ALL_IMAGES[@]}"; do
+		launch_container "$image"
+		exec_container > /dev/null <<- "EOF"
+			declare -a lines
+			pre() {
+				echo "Pre"
+			}
+			post() {
+				echo "Post"
+			}
+			main() {
+				echo "Main"
+			}
+			wrap_function main pre post
+			main | mapfile -t lines
+			[ "${#lines[@]}" = 3 ]
+			[ "${lines[0]}" = "Pre" ]
+			[ "${lines[1]}" = "Main" ]
+			[ "${lines[2]}" = "Post" ]
+		EOF
+		remove_container
+	done
+	printf "%s\n" "ok"
+}
+
+###
 # Export command as a standalone script with error handling.
 REQUIREMENTS["export_command"]="export_functions"
 export_command() {
@@ -1994,7 +2051,7 @@ main() {
 		else
 			export_command "$@"
 		fi
-		printf "%s" "#"
+		printf "%s" "# export"
 		printf " %q" "$@"
 		echo
 	;;
