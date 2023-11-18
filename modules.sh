@@ -229,7 +229,7 @@ test_export_command() {
 
 REQUIREMENTS["module_gnupg_key"]=""
 module_gnupg_key() {
-	eval "$(get_options "fingerprint key state secret" "$@")"
+	declare opts; get_options opts fingerprint key state secret -- "$@"; eval "$opts"; unset opts
 	: \
 		"${OPT_STATE:=1}" \
 		"${OPT_SECRET:=0}"
@@ -390,42 +390,47 @@ test_become() {
 	printf "%s\n" "ok"
 }
 
-###
-# Parse options as key-value pairs and output shell compatible declare statements.
+# shellcheck disable=SC2198
 get_options() {
-	declare \
-		keys \
-		key \
-		name \
-		value
-	declare -a \
-		opts \
-		values
-	read -r -a keys <<< "$1"
-	shift
-	opts=("$@")
-	for key in "${keys[@]}"; do
-		values=()
-		set -- "${opts[@]}"
-		while [ "$#" != 0 ]; do
-			name=$1
-			value=$2
-			shift 2
-			if [ "$name" = "$key" ]; then
-				values+=("$value")
+	# $1 - Name of variable where options script to evaluate is stored
+	# $2 - General usage placeholder
+	# $3 - Index of current option
+	# $4 - Index of current argument
+	# Arguments up to value "--" are option names
+	# The rest of arguments are arguments to parse
+	eval "${1}=\"\""
+	set -- "$1" "" 5 0 "${@:2}"
+	while true; do
+		set -- "$1" "${@:$3:1}" "${@:3}"
+		if [ "$2" = "--" ]; then
+			break
+		fi
+		if [ "$3" = "$#" ]; then
+			printf "%s\n" "Options delimiter not found" >&2
+			return 1
+		fi
+		set -- "$1" "${2^^}" "$(("$3" + 1))" "${@:4}"
+		printf -v "$1" "%s" "${!1}declare -a OPT_${2}=()"$'\n'
+	done
+	set -- "$1" "" 5 "$(("$3" + 1))" "${@:5}"
+	while [ "$4" -le "$#" ]; do
+		set -- "$1" "${@:$4:1}" 5 "${@:4}"
+		while [ "${@:$3:1}" != "--" ]; do
+			if [ "${@:$3:1}" = "$2" ]; then
+				break
 			fi
+			set -- "$1" "$2" "$(("$3" + 1))" "${@:4}"
 		done
-		key=${key//-/_}
-		key=$(printf "%q" "OPT_${key^^}")
-		if [ "${#values[@]}" = 0 ]; then
-			printf "%s\n" "declare ${key}"
-		elif [ "${#values[@]}" = 1 ]; then
-			value=$(printf "%q" "${values[0]}")
-			printf "%s\n" "declare ${key}=${value}"
+		if [ "${@:$3:1}" = "--" ]; then
+			set -- "${@:1:3}" "$(("$4" + 2))" "${@:5}"
 		else
-			printf "%s" "declare -a ${key}=("
-			printf "%q " "${values[@]}"
-			printf "%s\n" ")"
+			set --  "${@:1:3}" "$(("$4" + 1))" "${@:5}"
+			if [ "$4" -gt "$#" ]; then
+				printf "%s\n" "Missing value for option: ${2}" >&2
+				return 1
+			fi
+			printf -v "$1" "%s%q%s" "${!1}OPT_${2^^}+=(" "${@:$4:1}" ")"$'\n'
+			set -- "${@:1:3}" "$(("$4" + 1))" "${@:5}"
 		fi
 	done
 }
@@ -437,21 +442,22 @@ test_get_options() {
 	for image in "${ALL_IMAGES[@]}"; do
 		launch_container "$image"
 		exec_container > /dev/null <<- "EOF"
-			declare opts="name scripts enabled"
+			declare opts
 			declare -a args=()
 			args+=("name" "test")
 			args+=("scripts" "script1")
 			args+=("scripts" "scr"$'\n'"ipt2")
 			args+=("scripts" "sc(ri)pt3")
-			declare vars
-			vars=$(get_options "$opts" "${args[@]}")
-			eval "$vars"
+			get_options opts name scripts enabled -- "${args[@]}"
+			eval "$opts"
 			[ "$OPT_NAME" = "test" ]
 			[ "${#OPT_SCRIPTS[@]}" = 3 ]
 			[ "${OPT_SCRIPTS[0]}" = "script1" ]
 			[ "${OPT_SCRIPTS[1]}" = "scr"$'\n'"ipt2" ]
 			[ "${OPT_SCRIPTS[2]}" = "sc(ri)pt3" ]
 			[ ! -v OPT_ENABLED ]
+			get_options opts name2 --
+			[ ! -v OPT_NAME2 ]
 		EOF
 		remove_container
 	done
@@ -475,7 +481,7 @@ check_do() {
 # Ensure, that symlink exists and points to destination.
 REQUIREMENTS["module_symlink"]="get_options check_do"
 module_symlink() {
-	eval "$(get_options "src dest" "$@")"
+	declare opts; get_options opts src dest -- "$@"; eval "$opts"; unset opts
 	declare src=""
 	if [ -L "$OPT_DEST" ]; then
 		src=$(readlink "$OPT_DEST")
@@ -523,9 +529,9 @@ test_symlink() {
 
 ###
 # Ensure, that line exists in file. Add it to the end, if missing.
-REQUIREMENTS["module_line_in_file"]="get_options module_file_content"
+REQUIREMENTS["module_line_in_file"]="module_file_content"
 module_line_in_file() {
-	eval "$(get_options "path line state pattern" "$@")"
+	declare opts; get_options opts path line state pattern -- "$@"; eval "$opts"; unset opts
 	[ -v OPT_STATE ] || OPT_STATE=1
 	if [ -v OPT_LINE ]; then
 		OPT_LINE=${OPT_LINE//$'\n'}
@@ -613,7 +619,7 @@ test_line_in_file() {
 # Ensure, that file has mode, group or owner.
 REQUIREMENTS["module_file_permissions"]="get_options check_do"
 module_file_permissions() {
-	eval "$(get_options "mode owner group path" "$@")"
+	declare opts; get_options opts mode owner group path -- "$@"; eval "$opts"; unset opts
 	declare -a details
 	if [ ! -e "$OPT_PATH" ] && [ "${CHECK_MODE:-0}" = 1 ]; then
 		return 0
@@ -667,9 +673,9 @@ test_file_permissions() {
 
 ###
 # Ensure, that file has content.
-REQUIREMENTS["module_file_content"]="get_options check_do"
+REQUIREMENTS["module_file_content"]=""
 module_file_content() {
-	eval "$(get_options "path content base64" "$@")"
+	declare opts; get_options opts path content base64 -- "$@"; eval "$opts"; unset opts
 	: "${OPT_BASE64:=0}"
 	declare \
 		exit_code=0 \
@@ -753,7 +759,7 @@ test_file_content() {
 # Ensure, that APT package is installed.
 REQUIREMENTS["module_apt_packages"]="get_options"
 module_apt_packages() {
-	eval "$(get_options "names state cache_valid_time" "$@")"
+	declare opts; get_options opts names state cache_valid_time -- "$@"; eval "$opts"; unset opts
 	[ -v OPT_STATE ] || OPT_STATE=1
 	declare -a \
 		update_cmd=(check_do "Update APT cache" apt-get update) \
@@ -855,7 +861,7 @@ test_apt_packages() {
 # Ensure, that APT repository exists.
 REQUIREMENTS["module_apt_repository"]="module_file"
 module_apt_repository() {
-	eval "$(get_options "\
+	declare opts; get_options opts \
 		name \
 		url \
 		suites \
@@ -867,7 +873,8 @@ module_apt_repository() {
 		keyring_armored \
 		types \
 		update \
-	" "$@")"
+		-- "$@"
+	eval "$opts"; unset opts
 	declare \
 		delta="" \
 		repository_file \
@@ -950,9 +957,9 @@ test_apt_repository() {
 
 ###
 # Mark APT packages as held.
-REQUIREMENTS["module_apt_hold"]="get_options check_do"
+REQUIREMENTS["module_apt_hold"]=""
 module_apt_hold() {
-	eval "$(get_options "names state" "$@")"
+	declare opts; get_options opts names state -- "$@"; eval "$opts"; unset opts
 	[ -v OPT_STATE ] || OPT_STATE=1
 	declare -a \
 		pending=() \
@@ -1015,9 +1022,10 @@ test_apt_hold() {
 
 ###
 # Ensure user's state.
-REQUIREMENTS["module_user"]="get_options check_do"
+REQUIREMENTS["module_user"]=""
 module_user() {
-	eval "$(get_options "name uid gid comment create_home home shell force remove move_home state" "$@")"
+	declare opts; get_options opts name uid gid comment create_home home shell force remove move_home state -- "$@"
+	eval "$opts"; unset opts
 	[ -v OPT_CREATE_HOME ] || OPT_CREATE_HOME=1
 	[ -v OPT_FORCE ] || OPT_FORCE=0
 	[ -v OPT_REMOVE ] || OPT_REMOVE=0
@@ -1111,9 +1119,9 @@ test_user() {
 
 ###
 # Setup NodeJS.
-REQUIREMENTS["module_nodejs"]="get_options module_apt_repository module_apt_packages"
+REQUIREMENTS["module_nodejs"]="module_apt_repository module_apt_packages"
 module_nodejs() {
-	eval "$(get_options "version" "$@")"
+	declare opts; get_options opts version -- "$@"; eval "$opts"; unset opts
 	[ -v OPT_VERSION ] || OPT_VERSION=18
 	declare codename
 	{
@@ -1132,9 +1140,9 @@ module_nodejs() {
 
 ###
 # Setup Varnish
-REQUIREMENTS["module_varnish"]="get_options module_apt_repository module_apt_packages"
+REQUIREMENTS["module_varnish"]="module_apt_repository module_apt_packages"
 module_varnish() {
-	eval "$(get_options "version" "$@")"
+	declare opts; get_options opts version -- "$@"; eval "$opts"; unset opts
 	[ -v OPT_VERSION ] || OPT_VERSION="60lts"
 	: "${OPT_VERSION:="60lts"}"
 	declare codename
@@ -1154,9 +1162,9 @@ module_varnish() {
 
 ###
 # Setup Netdata
-REQUIREMENTS["module_netdata"]="get_options module_apt_repository module_apt_packages"
+REQUIREMENTS["module_netdata"]="module_apt_repository module_apt_packages"
 module_netdata() {
-	eval "$(get_options "release" "$@")"
+	declare opts; get_options opts release -- "$@"; eval "$opts"; unset opts
 	[ -v OPT_RELEASE ] || OPT_RELEASE="stable"
 	declare codename
 	{
@@ -1175,7 +1183,7 @@ module_netdata() {
 
 ###
 # Setup PostgreSQL repository without installing anything.
-REQUIREMENTS["module_postgresql"]="get_options module_apt_repository"
+REQUIREMENTS["module_postgresql"]="module_apt_repository"
 module_postgresql() {
 	declare codename
 	{
@@ -1193,9 +1201,9 @@ module_postgresql() {
 
 ###
 # Setup Elasticsearch.
-REQUIREMENTS["module_elasticsearch"]="get_options module_apt_repository module_apt_packages"
+REQUIREMENTS["module_elasticsearch"]="module_apt_repository module_apt_packages"
 module_elasticsearch() {
-	eval "$(get_options "version" "$@")"
+	declare opts; get_options opts version -- "$@"; eval "$opts"; unset opts
 	[ -v OPT_VERSION ] || OPT_VERSION=8
 	module_apt_repository \
 		name elasticsearch \
@@ -1209,9 +1217,9 @@ module_elasticsearch() {
 
 ###
 # Setup MySQL.
-REQUIREMENTS["module_mysql"]="get_options module_apt_repository module_apt_packages"
+REQUIREMENTS["module_mysql"]="module_apt_repository module_apt_packages"
 module_mysql() {
-	eval "$(get_options "version" "$@")"
+	declare opts; get_options opts version -- "$@"; eval "$opts"; unset opts
 	[ -v OPT_VERSION ] || OPT_VERSION="8.0"
 	declare \
 		keyring_url="https://pgp.mit.edu/pks/lookup?op=get&search=0x467B942D3A79BD29&exact=on&options=mr" \
@@ -1241,9 +1249,9 @@ module_mysql() {
 
 ###
 # Setup PHP from Sury.
-REQUIREMENTS["module_php_sury"]="get_options module_apt_repository module_apt_packages"
+REQUIREMENTS["module_php_sury"]="module_apt_repository module_apt_packages"
 module_php_sury() {
-	eval "$(get_options "version extensions" "$@")"
+	declare opts; get_options opts version extensions -- "$@"; eval "$opts"; unset opts
 	[ -v OPT_VERSION ] || OPT_VERSION="8.1"
 	declare \
 		i \
@@ -1334,9 +1342,9 @@ module_docker() {
 
 ###
 # Ensure directory state.
-REQUIREMENTS["module_directory"]="get_options"
+REQUIREMENTS["module_directory"]=""
 module_directory() {
-	eval "$(get_options "path state recursive" "$@")"
+	declare opts; get_options opts path state recursive -- "$@"; eval "$opts"; unset opts
 	[ -v OPT_STATE ] || OPT_STATE=1
 	[ -v OPT_RECURSIVE ] || OPT_RECURSIVE=0
 	declare -a cmd
@@ -1400,13 +1408,12 @@ test_directory() {
 ###
 # Manage systemd unit.
 REQUIREMENTS["module_systemd_unit"]="
-get_options
 check_do
 module_file_content
 module_file_permissions
 "
 module_systemd_unit() {
-	eval "$(get_options "name active definition enabled" "$@")"
+	declare opts; get_options opts name active definition enabled -- "$@"; eval "$opts"; unset opts
 	declare \
 		enabled \
 		enable_cmd \
@@ -1559,7 +1566,6 @@ test_handlers() {
 ###
 # Manage file.
 REQUIREMENTS["module_file"]="
-get_options
 check_do
 module_file_content
 module_file_permissions
@@ -1567,7 +1573,8 @@ module_directory
 module_symlink
 "
 module_file() {
-	eval "$(get_options "path src content base64 recursive mode owner group state" "$@")"
+	declare opts; get_options opts path src content base64 recursive mode owner group state -- "$@"
+	eval "$opts"; unset opts
 	declare -a options=()
 	case "$OPT_STATE" in
 		directory)
