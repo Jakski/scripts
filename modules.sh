@@ -1083,7 +1083,7 @@ module_user() {
 TEST_SUITES+=(test_user)
 test_user() {
 	printf "%s" "${FUNCNAME[0]} "
-	for image in debian_bullseye debian_bookworm rockylinux_9; do
+	for image in "${ALL_IMAGES[@]}"; do
 		launch_container "$image"
 		exec_container > /dev/null <<- "EOF"
 			module_user \
@@ -1112,6 +1112,78 @@ test_user() {
 			failed=0
 			id test1 &>/dev/null || failed=1
 			[ "$failed" = 1 ]
+		EOF
+		remove_container
+	done
+	printf "%s\n" "ok"
+}
+
+###
+# Ensure group state.
+module_group() {
+	declare opts; get_options opts name id state force system -- "$@"; eval "$opts"; unset opts
+	declare \
+		exit_code=0 \
+		output \
+		name \
+		password \
+		id \
+		members
+	declare -a \
+		del_opts=() \
+		add_opts=()
+	[ -v OPT_STATE ] || OPT_STATE=1
+	[ "${OPT_FORCE:-0}" = 0 ] || del_opts+=(--force)
+	[ ! -v OPT_ID ] || add_opts+=(-g "$OPT_ID")
+	[ "${OPT_SYSTEM:-0}" = 0 ] || add_opts+=(-r)
+	output=$(getent group "$OPT_NAME") || exit_code=$?
+	if [ "$exit_code" != 0 ] && [ "$exit_code" != 2 ]; then
+		return 1
+	fi
+	if [ -n "$output" ]; then
+		if [ "$OPT_STATE" = 0 ]; then
+			check_do "Remove group ${OPT_NAME}" \
+				groupdel "${del_opts[@]}" "$OPT_NAME"
+		else
+			# shellcheck disable=SC2034
+			IFS=":" read -r name password id members <<<"$output"
+			if [ -v OPT_ID ] && [ "$OPT_ID" != "$id" ]; then
+				check_do "Change ID of group ${OPT_NAME} from ${id} to ${OPT_ID}" \
+					groupmod -g "$OPT_ID" "$OPT_NAME"
+			fi
+		fi
+	elif [ "$OPT_STATE" != 0 ]; then
+		check_do "Add group ${OPT_NAME}" \
+			groupadd "${add_opts[@]}" "$OPT_NAME"
+	fi
+}
+
+TEST_SUITES+=(test_group)
+test_group() {
+	printf "%s" "${FUNCNAME[0]} "
+	for image in "${ALL_IMAGES[@]}"; do
+		launch_container "$image"
+		exec_container > /dev/null <<- "EOF"
+			declare name="testing"
+			declare exit_code
+			module_group \
+				name "$name"
+			module_group \
+				name "$name"
+			getent group "$name" >/dev/null
+			module_group \
+				name "$name" \
+				id 1777
+			getent group "$name" | grep 1777 >/dev/null
+			module_group \
+				name "$name" \
+				state 0
+			module_group \
+				name "$name" \
+				state 0
+			exit_code=0
+			getent group "$name" >/dev/null || exit_code=$?
+			[ "$exit_code" = 2 ]
 		EOF
 		remove_container
 	done
@@ -1943,6 +2015,7 @@ ENV PATH=/usr/local/bin:/usr/local/sbin:/bin:/sbin:/usr/bin:/usr/sbin
 
 RUN apk add \
 	bash \
+	shadow \
 	gpg \
 	gpg-agent \
 	openssh-server \
