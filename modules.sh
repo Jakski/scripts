@@ -637,7 +637,7 @@ module_file_permissions() {
 	if [ -v OPT_GROUP ]; then
 		if [[ ! "$OPT_GROUP" =~ ^[[:digit:]]+$ ]]; then
 			OPT_GROUP=$(getent group "$OPT_GROUP")
-			[[ $OPT_GROUP =~ ^[^:]*:[^:]*:([^:]*):$ ]] && OPT_GROUP=${BASH_REMATCH[1]}
+			[[ $OPT_GROUP =~ ^[^:]*:[^:]*:([^:]*):[^:]*$ ]] && OPT_GROUP=${BASH_REMATCH[1]}
 		fi
 		if [ "${details[1]}" != "$OPT_GROUP" ]; then
 			check_do "Set ${OPT_PATH} group to ${OPT_GROUP}" \
