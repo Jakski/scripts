@@ -23,6 +23,7 @@ declare -a \
 	)
 declare -A REQUIREMENTS=()
 
+REQUIREMENTS["on_exit"]=""
 on_exit() {
 	declare \
 		cmd=$BASH_COMMAND \
@@ -51,6 +52,7 @@ on_exit() {
 	exit "$exit_code"
 }
 
+REQUIREMENTS["on_error"]=""
 on_error() {
 	declare \
 		cmd=$BASH_COMMAND \
@@ -75,6 +77,7 @@ on_exit_remove_container() {
 
 ###
 # Execute code before or after a function.
+REQUIREMENTS["wrap_function"]=""
 wrap_function() {
 	declare \
 		fn=$1 \
@@ -390,6 +393,7 @@ test_become() {
 	printf "%s\n" "ok"
 }
 
+REQUIREMENTS["get_options"]=""
 # shellcheck disable=SC2198
 get_options() {
 	# $1 - Name of variable where options script to evaluate is stored
@@ -466,6 +470,7 @@ test_get_options() {
 
 ###
 # Skip task in check mode.
+REQUIREMENTS["check_do"]=""
 check_do() {
 	declare comment=$1
 	shift
@@ -1120,6 +1125,7 @@ test_user() {
 
 ###
 # Ensure group state.
+REQUIREMENTS["module_group"]=""
 module_group() {
 	declare opts; get_options opts name id state force system -- "$@"; eval "$opts"; unset opts
 	declare \
@@ -1583,6 +1589,7 @@ test_systemd_unit() {
 
 ###
 # Record command for later invocation.
+REQUIREMENTS["add_handler"]=""
 add_handler() {
 	declare \
 		cmd="" \
@@ -1604,7 +1611,8 @@ add_handler() {
 }
 
 ###
-# Run recorder tasks.
+# Run recorded tasks.
+REQUIREMENTS["flush_handlers"]=""
 flush_handlers() {
 	declare handler
 	for handler in "${HANDLERS[@]:-}"; do
@@ -1766,6 +1774,7 @@ test_file() {
 
 ###
 # Verify checksum in pipe. All input data is buffered in memory.
+REQUIREMENTS["verify_checksum"]=""
 verify_checksum() {
 	declare \
 		algorithm=$1 \
@@ -1801,6 +1810,7 @@ test_verify_checksum() {
 	printf "%s\n" "ok"
 }
 
+REQUIREMENTS["get_exit_code"]=""
 get_exit_code() {
 	# shellcheck disable=SC2064
 	trap "$(trap -p ERR)" RETURN
@@ -1834,6 +1844,7 @@ test_get_exit_code() {
 	printf "%s\n" "ok"
 }
 
+REQUIREMENTS["file_to_function"]=""
 file_to_function() {
 	declare \
 		arg1 \
@@ -2079,6 +2090,7 @@ run_tests() {
 	done
 }
 
+REQUIREMENTS["export_functions"]=""
 export_functions() {
 	declare -a functions=("$@")
 	declare -A exported=()
