@@ -363,6 +363,113 @@ test_gnupg_key() {
 	printf "%s\n" "ok"
 }
 
+REQUIREMENTS["decrypt_gnupg_vault"]=""
+decrypt_gnupg_vault() {
+	declare opts
+	get_options opts path password -- "$@"
+	eval "$opts"; unset opts
+	gpg \
+		--batch \
+		--quiet \
+		--decrypt \
+		--passphrase-file <(printf "%s" "$OPT_PASSWORD") \
+		<"$OPT_PATH"
+}
+
+REQUIREMENTS["encrypt_gnupg_vault"]=""
+encrypt_gnupg_vault() {
+	declare opts
+	get_options opts var path password -- "$@"
+	eval "$opts"; unset opts
+	printf "%s" "${OPT_VAR#*=}" | gpg \
+		--batch \
+		--quiet \
+		--symmetric \
+		--passphrase-file <(printf "%s" "$OPT_PASSWORD") \
+		>"${OPT_PATH}-new"
+	chmod 600 "${OPT_PATH}-new"
+	mv "${OPT_PATH}-new" "$OPT_PATH"
+}
+
+###
+# Manage GPG based vault.
+REQUIREMENTS["module_gnupg_vault_entry"]="
+decrypt_gnupg_vault
+encrypt_gnupg_vault
+"
+module_gnupg_vault_entry() {
+	declare opts
+	get_options opts name value var path password -- "$@"
+	eval "$opts"; unset opts
+	declare -A vault=()
+	declare \
+		is_changed=0 \
+		raw_vault
+	if [ -v OPT_VAR ]; then
+		eval "vault=${OPT_VAR#*=}"
+	elif [ -e "$OPT_PATH" ]; then
+		raw_vault=$(decrypt_gnupg_vault path "$OPT_PATH" password "$OPT_PASSWORD")
+		eval "vault=${raw_vault}"
+	fi
+	if [ -n "$OPT_VALUE" ]; then
+		if [ "${vault["$OPT_NAME"]:-}" != "$OPT_VALUE" ]; then
+			is_changed=1
+			vault["$OPT_NAME"]=$OPT_VALUE
+		fi
+	elif [ -n "${vault["$OPT_NAME"]:-}" ]; then
+		is_changed=1
+		unset 'vault[$OPT_NAME]'
+	fi
+	raw_vault=$(declare -p vault)
+	if [ "$is_changed" != 0 ]; then
+		encrypt_gnupg_vault var "$raw_vault" path "$OPT_PATH" password "$OPT_PASSWORD"
+	fi
+	printf "%s" "${raw_vault#*=}"
+}
+
+TEST_SUITES+=("test_gnupg_vault_entry")
+test_gnupg_vault_entry() {
+	printf "%s" "${FUNCNAME[0]} "
+	declare image
+	for image in "${ALL_IMAGES[@]}"; do
+		launch_container "$image"
+		exec_container <<-"EOF"
+			declare raw_vault
+			declare -A vault
+			rm -rf ".vault"
+
+			raw_vault=$(module_gnupg_vault_entry \
+				name "test" \
+				value "qwerty" \
+				path ".vault" \
+				password "qwerty"
+			)
+			eval "vault=${raw_vault}"
+			raw_vault=$(declare -p vault)
+			raw_vault=$(module_gnupg_vault_entry \
+				name "test" \
+				var "$raw_vault" \
+				value "qwerty" \
+				path ".vault" \
+				password "qwerty"
+			)
+			eval "vault=${raw_vault}"
+			[ "${vault[test]}" = "qwerty" ]
+
+			raw_vault=$(module_gnupg_vault_entry \
+				name "test" \
+				value "" \
+				path ".vault" \
+				password "qwerty"
+			)
+			eval "vault=${raw_vault}"
+			[ "${vault[test]:-}" = "" ]
+		EOF
+		remove_container
+	done
+	printf "%s\n" "ok"
+}
+
 ###
 # Pipe script into shell started as a different user.
 REQUIREMENTS["become"]="export_command"
@@ -1487,7 +1594,6 @@ test_directory() {
 ###
 # Manage systemd unit.
 REQUIREMENTS["module_systemd_unit"]="
-check_do
 module_file_content
 module_file_permissions
 "
@@ -1647,7 +1753,6 @@ test_handlers() {
 ###
 # Manage file.
 REQUIREMENTS["module_file"]="
-check_do
 module_file_content
 module_file_permissions
 module_directory
@@ -2155,4 +2260,6 @@ main() {
 	esac
 }
 
-main "$@"
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+	main "$@"
+fi
