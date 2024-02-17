@@ -406,19 +406,28 @@ module_gnupg_vault_entry() {
 		is_changed=0 \
 		raw_vault
 	if [ -v OPT_VAR ]; then
-		eval "vault=${OPT_VAR#*=}"
+		if [[ $OPT_VAR =~ ^declare ]]; then
+			eval "vault=${OPT_VAR#*=}"
+		else
+			eval "vault=${OPT_VAR}"
+		fi
 	elif [ -e "$OPT_PATH" ]; then
 		raw_vault=$(decrypt_gnupg_vault path "$OPT_PATH" password "$OPT_PASSWORD")
 		eval "vault=${raw_vault}"
 	fi
-	if [ -n "$OPT_VALUE" ]; then
-		if [ "${vault["$OPT_NAME"]:-}" != "$OPT_VALUE" ]; then
+	if [ -v OPT_VALUE ]; then
+		if [ -n "$OPT_VALUE" ]; then
+			if [ "${vault["$OPT_NAME"]:-}" != "$OPT_VALUE" ]; then
+				is_changed=1
+				vault["$OPT_NAME"]=$OPT_VALUE
+			fi
+		elif [ -n "${vault["$OPT_NAME"]:-}" ]; then
 			is_changed=1
-			vault["$OPT_NAME"]=$OPT_VALUE
+			unset 'vault[$OPT_NAME]'
 		fi
-	elif [ -n "${vault["$OPT_NAME"]:-}" ]; then
-		is_changed=1
-		unset 'vault[$OPT_NAME]'
+	elif [ -z "${vault["$OPT_NAME"]:-}" ]; then
+		printf "%s\n" "Key ${OPT_NAME} is missing from vault" >&2
+		return 1
 	fi
 	raw_vault=$(declare -p vault)
 	if [ "$is_changed" != 0 ]; then
@@ -434,7 +443,7 @@ test_gnupg_vault_entry() {
 	for image in "${ALL_IMAGES[@]}"; do
 		launch_container "$image"
 		exec_container <<-"EOF"
-			declare raw_vault
+			declare raw_vault r
 			declare -A vault
 			rm -rf ".vault"
 
@@ -445,7 +454,6 @@ test_gnupg_vault_entry() {
 				password "qwerty"
 			)
 			eval "vault=${raw_vault}"
-			raw_vault=$(declare -p vault)
 			raw_vault=$(module_gnupg_vault_entry \
 				name "test" \
 				var "$raw_vault" \
@@ -458,12 +466,27 @@ test_gnupg_vault_entry() {
 
 			raw_vault=$(module_gnupg_vault_entry \
 				name "test" \
+				var "$raw_vault" \
+				path ".vault" \
+				password "qwerty"
+			)
+			eval "vault=${raw_vault}"
+
+			raw_vault=$(module_gnupg_vault_entry \
+				name "test" \
 				value "" \
 				path ".vault" \
 				password "qwerty"
 			)
 			eval "vault=${raw_vault}"
 			[ "${vault[test]:-}" = "" ]
+
+			get_exit_code r module_gnupg_vault_entry \
+				name "test" \
+				var "$raw_vault" \
+				path ".vault" \
+				password "qwerty" >/dev/null 2>&1
+			[ "$r" = 1 ]
 		EOF
 		remove_container
 	done
