@@ -2228,6 +2228,10 @@ export_functions() {
 	while [ "${#functions[@]}" != 0 ]; do
 		fn=${functions[0]}
 		requires=${REQUIREMENTS["$fn"]:-}
+		if [ "$requires" = "-" ]; then
+			requires=$(declare -f "$fn" | tail -n +2 | { grep -oFf <(printf '%s\n' "${!REQUIREMENTS[@]}") || true; })
+			REQUIREMENTS["$fn"]=$requires
+		fi
 		requires=${requires//$'\n'/ }
 		if [ ! -v "exported[${fn}]" ]; then
 			exported["$fn"]="$requires"
@@ -2246,6 +2250,27 @@ export_functions() {
 		declare -pf "$fn"
 		echo
 	done
+}
+
+TEST_SUITES+=(test_export_functions)
+test_export_functions() {
+	printf "%s" "${FUNCNAME[0]} "
+	declare image
+	for image in "${ALL_IMAGES[@]}"; do
+		launch_container "$image"
+		exec_container > /dev/null <<- "EOF"
+			export_functions export_functions | grep ^export_functions >/dev/null
+			REQUIREMENTS["fn"]=""
+			fn() { module_file; }
+			export_functions fn | { grep ^module_file || true; } | wc -l | grep '^0$' >/dev/null
+			REQUIREMENTS["fn"]="-"
+			export_functions fn | grep ^module_file >/dev/null
+			REQUIREMENTS["fn"]="module_file"
+			export_functions fn | grep ^module_file >/dev/null
+		EOF
+		remove_container
+	done
+	printf "%s\n" "ok"
 }
 
 main() {
