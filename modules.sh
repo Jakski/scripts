@@ -1348,6 +1348,25 @@ module_nodejs() {
 }
 
 ###
+# Setup Matrix Synapse
+REQUIREMENTS["module_matrix_synapse"]="module_apt_repository module_apt_packages"
+module_matrix_synapse() {
+	declare codename
+	{
+		source /etc/os-release
+		printf "%s\n" "$VERSION_CODENAME"
+	} | read -r codename
+	module_apt_repository \
+		name matrix \
+		url "https://packages.matrix.org/debian/" \
+		keyring_url "https://packages.matrix.org/debian/matrix-org-archive-keyring.gpg" \
+		keyring_armored 0 \
+		suites "$codename" \
+		components "main"
+	module_apt_packages names matrix-synapse-py3
+}
+
+###
 # Setup Varnish
 REQUIREMENTS["module_varnish"]="module_apt_repository module_apt_packages"
 module_varnish() {
