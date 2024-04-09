@@ -134,6 +134,67 @@ test_wrap_function() {
 }
 
 ###
+# Run command and return output in format:
+#   <status code> <base64 encoded stdout> <base64 encoded stderr>
+REQUIREMENTS["capture_result"]="get_exit_code"
+capture_result() {
+	declare \
+		tmpdir="/dev/shm" \
+		out_file \
+		err_file \
+		out \
+		err \
+		status
+	[ ! -d "$tmpdir" ] || tmpdir="/tmp"
+	out_file=$(mktemp "${tmpdir}/stdout_XXXXXX")
+	err_file=$(mktemp "${tmpdir}/stderr_XXXXXX")
+	# shellcheck disable=SC2064
+	trap "rm ${out_file} ${err_file}" RETURN
+	get_exit_code status "$@" >"$out_file" 2>"$err_file"
+	out=$(base64 -w 0 <"$out_file")
+	err=$(base64 -w 0 <"$err_file")
+	printf "%s\n" "${status} ${out} ${err}"
+}
+
+TEST_SUITES+=("test_capture_result")
+test_capture_result() {
+	printf "%s" "${FUNCNAME[0]} "
+	declare image
+	for image in "${ALL_IMAGES[@]}"; do
+		launch_container "$image"
+		exec_container > /dev/null <<- "EOF"
+			declare result stdout stderr status
+
+			fn() {
+				echo "$1"
+				echo "$2" >&2
+				return 1
+			}
+			result=$(capture_result fn stdout stderr)
+			read -r status stdout stderr <<<"$result"
+			[ "$status" = 1 ]
+			stdout=$(base64 -d <<<"$stdout")
+			[ "$stdout" = "stdout" ]
+			stderr=$(base64 -d <<<"$stderr")
+			[ "$stderr" = "stderr" ]
+
+			fn() {
+				return 0
+			}
+			result=$(capture_result fn)
+			read -r status stdout stderr <<<"$result"
+			[ "$status" = 0 ]
+			stdout=$(base64 -d <<<"$stdout")
+			[ "$stdout" = "" ]
+			stderr=$(base64 -d <<<"$stderr")
+			[ "$stderr" = "" ]
+		EOF
+		remove_container
+	done
+	printf "%s\n" "ok"
+}
+
+###
 # Export command as a standalone script with error handling.
 REQUIREMENTS["export_command"]="export_functions"
 export_command() {
@@ -1967,7 +2028,7 @@ get_exit_code() {
 		set -e
 		"${@:2}"
 	)
-	eval "$1+=($(printf "%q" "$?"))"
+	eval "$1+=($?)"
 	set -e
 }
 
