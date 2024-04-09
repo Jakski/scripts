@@ -145,7 +145,7 @@ capture_result() {
 		out \
 		err \
 		status
-	[ ! -d "$tmpdir" ] || tmpdir="/tmp"
+	[ -d "$tmpdir" ] || tmpdir="/tmp"
 	out_file=$(mktemp "${tmpdir}/stdout_XXXXXX")
 	err_file=$(mktemp "${tmpdir}/stderr_XXXXXX")
 	# shellcheck disable=SC2064
