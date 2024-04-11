@@ -149,7 +149,7 @@ capture_result() {
 	out_file=$(mktemp "${tmpdir}/stdout_XXXXXX")
 	err_file=$(mktemp "${tmpdir}/stderr_XXXXXX")
 	# shellcheck disable=SC2064
-	trap "rm ${out_file} ${err_file}" RETURN
+	trap "rm ${out_file} ${err_file}; trap - RETURN" RETURN
 	get_exit_code status "$@" >"$out_file" 2>"$err_file"
 	out=$(base64 -w 0 <"$out_file")
 	err=$(base64 -w 0 <"$err_file")
@@ -2021,7 +2021,7 @@ test_verify_checksum() {
 REQUIREMENTS["get_exit_code"]=""
 get_exit_code() {
 	# shellcheck disable=SC2064
-	trap "$(trap -p ERR)" RETURN
+	trap "$(trap -p ERR); trap - RETURN" RETURN
 	trap ERR
 	set +e
 	(
